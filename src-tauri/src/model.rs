@@ -187,6 +187,8 @@ pub struct NotificationStatus {
 }
 
 impl NotificationStatus {
+    /// Used by the Linux probe and the fallback platform; Windows never needs it.
+    #[cfg_attr(target_os = "windows", allow(dead_code))]
     pub fn unavailable(error: impl Into<String>) -> Self {
         Self {
             available: false,

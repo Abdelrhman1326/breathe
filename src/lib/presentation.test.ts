@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  describePopup,
   describeMainWindow,
   effectiveIntervalMinutes,
   primaryActionLabel,
@@ -154,5 +155,32 @@ describe("effectiveIntervalMinutes", () => {
     expect(effectiveIntervalMinutes(settings, snapshot({ intervalMinutes: 0 }))).toBe(
       45,
     );
+  });
+});
+
+describe("describePopup", () => {
+  it("makes reminders actionable and names the category", () => {
+    const copy = describePopup({
+      type: "reminder",
+      reminder: { id: 1, kind: "movement" },
+    });
+    expect(copy.title).toBe("Time to move a little");
+    expect(copy.actionable).toBe(true);
+    expect(copy.kind).toBe("movement");
+  });
+
+  it("uses the same reminder copy for the preview, without actions", () => {
+    const preview = describePopup({ type: "test", kind: "eyes" });
+    const real = describePopup({ type: "reminder", reminder: { id: 1, kind: "eyes" } });
+    expect(preview.title).toBe(real.title);
+    expect(preview.body).toBe(real.body);
+    expect(preview.actionable).toBe(false);
+    expect(preview.eyebrow).toBe("Preview");
+  });
+
+  it("welcomes the user back after a break", () => {
+    const copy = describePopup({ type: "breakOver", kind: "eyes" });
+    expect(copy.title).toBe("Break's over");
+    expect(copy.actionable).toBe(false);
   });
 });

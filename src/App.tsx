@@ -1,6 +1,7 @@
 import { useBreathe } from "@/hooks/useBreathe";
 import { MainWindow } from "@/components/MainWindow";
 import { SettingsWindow } from "@/components/settings/SettingsWindow";
+import { PopupWindow } from "@/components/PopupWindow";
 
 /**
  * Both windows load the same bundle and route on the Tauri window label. The
@@ -13,6 +14,20 @@ export default function App() {
     // Keep the frame painted in the right colour while state loads, so the
     // window never flashes white.
     return <div className="h-full w-full bg-app" />;
+  }
+
+  if (controller.windowLabel === "popup") {
+    return (
+      <PopupWindow
+        snoozeEnabled={controller.settings.snoozeEnabled}
+        onTakeBreak={(reminderId) => {
+          void controller.takeBreak(reminderId);
+        }}
+        onSnooze={(reminderId) => {
+          void controller.snooze(reminderId);
+        }}
+      />
+    );
   }
 
   if (controller.windowLabel === "settings") {

@@ -1,6 +1,7 @@
 import {
   BREAK_MINUTES,
   SNOOZE_MINUTES,
+  type PopupContent,
   type ReminderKind,
   type Settings,
   type Snapshot,
@@ -155,4 +156,57 @@ export function breakActionLabel(): string {
 
 export function snoozeActionLabel(): string {
   return `Snooze ${SNOOZE_MINUTES} minutes`;
+}
+
+export interface PopupCopy {
+  title: string;
+  body: string;
+  kind: ReminderKind;
+  /** Whether the popup offers the break and the snooze. */
+  actionable: boolean;
+  /** Small caption above the title. */
+  eyebrow: string;
+}
+
+/**
+ * Maps popup content onto what the popup shows. Pure, like
+ * `describeMainWindow`, so the copy is unit-testable.
+ */
+export function describePopup(content: PopupContent): PopupCopy {
+  switch (content.type) {
+    case "reminder":
+      return {
+        ...reminderCopy(content.reminder.kind),
+        kind: content.reminder.kind,
+        actionable: true,
+        eyebrow: "Breathe",
+      };
+    case "test":
+      return {
+        ...reminderCopy(content.kind),
+        kind: content.kind,
+        actionable: false,
+        eyebrow: "Preview",
+      };
+    case "breakOver":
+      return {
+        title: "Break's over",
+        body: "Welcome back. Your next reminder countdown has started.",
+        kind: content.kind,
+        actionable: false,
+        eyebrow: "Breathe",
+      };
+  }
+}
+
+function reminderCopy(kind: ReminderKind): { title: string; body: string } {
+  return kind === "movement"
+    ? {
+        title: "Time to move a little",
+        body: "Stand up, stretch, and give your body a chance to move.",
+      }
+    : {
+        title: "Time to rest your eyes",
+        body: "Look away from the screen and let your eyes rest on something far away.",
+      };
 }

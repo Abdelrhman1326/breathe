@@ -66,6 +66,18 @@ export interface Snapshot {
   pending: PendingReminder | null;
 }
 
+/** Mirrors `PopupContent` in `src-tauri/src/popup.rs`. */
+export type PopupContent =
+  | { type: "reminder"; reminder: PendingReminder }
+  | { type: "breakOver"; kind: ReminderKind }
+  | { type: "test"; kind: ReminderKind };
+
+/** What the popup window renders; `seq` changes with every new popup. */
+export interface PopupView {
+  seq: number;
+  content: PopupContent;
+}
+
 export interface NotificationStatus {
   available: boolean;
   service: string | null;

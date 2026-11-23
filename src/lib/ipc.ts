@@ -9,6 +9,7 @@ import type {
   Snapshot,
   NotificationStatus,
   TestNotificationResult,
+  PopupView,
 } from "./types";
 import { BREAK_MINUTES, SNOOZE_MINUTES } from "./types";
 
@@ -24,6 +25,7 @@ import { BREAK_MINUTES, SNOOZE_MINUTES } from "./types";
 export const EVENTS = {
   snapshot: "breathe://snapshot",
   settings: "breathe://settings",
+  popup: "breathe://popup",
 } as const;
 
 export function isTauri(): boolean {
@@ -181,6 +183,43 @@ export async function snoozeReminders(reminderId?: number): Promise<Snapshot> {
   return invoke<Snapshot>("snooze_reminders", { reminderId: reminderId ?? null });
 }
 
+/** What the popup should render right now (null when hidden). */
+export async function getPopup(): Promise<PopupView | null> {
+  if (!isTauri()) return mockPopup;
+  return invoke<PopupView | null>("get_popup");
+}
+
+/** Hides the popup identified by `seq`. Does not answer a reminder. */
+export async function dismissPopup(seq: number): Promise<void> {
+  if (!isTauri()) {
+    mockPopup = null;
+    return;
+  }
+  await invoke("dismiss_popup", { seq });
+}
+
+/**
+ * Browser preview: `?window=popup&popup=reminder|breakOver|test` renders the
+ * popup with sample content for layout work.
+ */
+let mockPopup: PopupView | null = (() => {
+  if (typeof window === "undefined") return null;
+  const type = new URLSearchParams(window.location.search).get("popup");
+  switch (type) {
+    case "breakOver":
+      return { seq: 1, content: { type: "breakOver", kind: "eyes" } };
+    case "test":
+      return { seq: 1, content: { type: "test", kind: "eyes" } };
+    case "reminder":
+      return {
+        seq: 1,
+        content: { type: "reminder", reminder: { id: 1, kind: "movement" } },
+      };
+    default:
+      return null;
+  }
+})();
+
 /** Takes the break for the waiting reminder. A stale id is ignored by Rust. */
 export async function takeBreak(reminderId: number): Promise<Snapshot> {
   if (!isTauri()) {
@@ -311,6 +350,23 @@ export function onSettings(handler: (settings: Settings) => void): UnlistenFn {
   let disposed = false;
   let unlisten: UnlistenFn | null = null;
   void listen<Settings>(EVENTS.settings, (event) => handler(event.payload)).then(
+    (fn) => {
+      if (disposed) fn();
+      else unlisten = fn;
+    },
+  );
+  return () => {
+    disposed = true;
+    unlisten?.();
+  };
+}
+
+/** Popup content pushed from Rust; `null` means the popup was hidden. */
+export function onPopup(handler: (view: PopupView | null) => void): UnlistenFn {
+  if (!isTauri()) return () => undefined;
+  let disposed = false;
+  let unlisten: UnlistenFn | null = null;
+  void listen<PopupView | null>(EVENTS.popup, (event) => handler(event.payload)).then(
     (fn) => {
       if (disposed) fn();
       else unlisten = fn;

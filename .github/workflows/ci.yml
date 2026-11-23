@@ -38,6 +38,10 @@ jobs:
         uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master, 2026-10-19
         with:
           toolchain: 1.96.0
+          components: rustfmt, clippy
+
+      - name: Check Rust formatting
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml --all --check
 
       - name: Cache Cargo
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -76,6 +80,9 @@ jobs:
       - name: Check version consistency
         run: npm run check:version
 
+      - name: Lint frontend
+        run: npm run lint
+
       - name: Run frontend tests
         run: npm test
 
@@ -90,6 +97,9 @@ jobs:
 
       - name: Verify website base path and local assets
         run: npm run website:check
+
+      - name: Run Clippy
+        run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 
       - name: Run Rust tests
         run: cargo test --locked --manifest-path src-tauri/Cargo.toml
@@ -150,6 +160,7 @@ jobs:
         with:
           toolchain: 1.96.0
           targets: x86_64-pc-windows-msvc
+          components: clippy
 
       - name: Cache Cargo
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -176,6 +187,9 @@ jobs:
 
       - name: Build frontend (required before cargo test)
         run: npm run build
+
+      - name: Run Clippy
+        run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 
       - name: Run Rust tests
         run: cargo test --locked --manifest-path src-tauri/Cargo.toml

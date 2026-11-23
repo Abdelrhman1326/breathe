@@ -70,6 +70,8 @@ describe("labels", () => {
     expect(scheduleLabel("running")).toBe("Running");
     expect(scheduleLabel("paused")).toBe("Paused");
     expect(scheduleLabel("snoozed")).toBe("Snoozed");
+    expect(scheduleLabel("awaiting")).toBe("Waiting for you");
+    expect(scheduleLabel("break")).toBe("On a break");
     expect(scheduleLabel("quit")).toBe("Quit");
   });
 });

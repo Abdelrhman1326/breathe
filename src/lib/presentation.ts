@@ -1,7 +1,19 @@
-import type { ReminderKind, Settings, Snapshot } from "./types";
+import {
+  BREAK_MINUTES,
+  SNOOZE_MINUTES,
+  type ReminderKind,
+  type Settings,
+  type Snapshot,
+} from "./types";
 import { formatClockTime, formatDuration } from "./format";
 
-export type Phase = "running" | "paused" | "snoozed" | "disabled";
+export type Phase =
+  | "running"
+  | "paused"
+  | "snoozed"
+  | "awaiting"
+  | "break"
+  | "disabled";
 
 export interface MainWindowCopy {
   /** Caption shown above the countdown inside the ring. */
@@ -36,6 +48,34 @@ export function describeMainWindow(
       support: "Turn on eye rest or movement reminders in Settings.",
       phase: "disabled",
       muted: true,
+    };
+  }
+
+  if (snapshot.state === "awaiting") {
+    const kind = snapshot.pending?.kind ?? snapshot.nextKind;
+    return {
+      label: kind === "movement" ? "Time to move a little" : "Time to rest your eyes",
+      time: formatDuration(0),
+      support:
+        kind === "movement"
+          ? "Stand up and stretch. Take a short break, or snooze for a while."
+          : "Look into the distance. Take a short break, or snooze for a while.",
+      phase: "awaiting",
+      muted: false,
+    };
+  }
+
+  if (snapshot.state === "break") {
+    const kind = snapshot.pending?.kind ?? null;
+    return {
+      label: kind === "movement" ? "Movement break" : "Eye break",
+      time: formatDuration(snapshot.remainingMs),
+      support:
+        kind === "movement"
+          ? "Stretch or walk around. The next countdown starts after your break."
+          : "Let your eyes rest on something far away. The next countdown starts after your break.",
+      phase: "break",
+      muted: false,
     };
   }
 
@@ -87,6 +127,8 @@ function snoozeSupport(nextAtMs: number | null): string {
 /** Label for the single primary action in the main window. */
 export function primaryActionLabel(phase: Phase): string {
   switch (phase) {
+    case "awaiting":
+      return breakActionLabel();
     case "snoozed":
       return "Resume now";
     case "paused":
@@ -105,4 +147,12 @@ export function effectiveIntervalMinutes(
   snapshot: Snapshot,
 ): number {
   return snapshot.intervalMinutes || settings.intervalMinutes;
+}
+
+export function breakActionLabel(): string {
+  return `Take a ${BREAK_MINUTES}-minute break`;
+}
+
+export function snoozeActionLabel(): string {
+  return `Snooze ${SNOOZE_MINUTES} minutes`;
 }

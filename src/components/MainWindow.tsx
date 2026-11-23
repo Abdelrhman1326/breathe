@@ -1,16 +1,25 @@
 import { useMemo } from "react";
 import { intervalLabel } from "@/lib/format";
-import { describeMainWindow, primaryActionLabel } from "@/lib/presentation";
+import {
+  breakActionLabel,
+  describeMainWindow,
+  primaryActionLabel,
+  snoozeActionLabel,
+} from "@/lib/presentation";
 import { INTERVAL_OPTIONS, type Settings, type Snapshot } from "@/lib/types";
 import { CircularTimer } from "./CircularTimer";
 import { TitleBar } from "./TitleBar";
-import { PauseIcon, PlayIcon, SettingsIcon } from "./icons";
-import { IconButton, PrimaryButton, SelectField } from "./ui";
+import { ClockIcon, EyeIcon, MovementIcon, PauseIcon, PlayIcon, SettingsIcon } from "./icons";
+import { IconButton, PrimaryButton, SecondaryButton, SelectField } from "./ui";
 
 export interface MainWindowActions {
   onPause: () => void;
   onResume: () => void;
   onSetInterval: (minutes: number) => void;
+  /** Takes the break for the waiting reminder, identified by id. */
+  onTakeBreak: (reminderId: number) => void;
+  /** Snoozes the waiting reminder, identified by id. */
+  onSnooze: (reminderId: number) => void;
   onOpenSettings: () => void;
   onHide: () => void;
   onMinimize: () => void;
@@ -39,6 +48,8 @@ export function MainWindow({ settings, snapshot, actions }: MainWindowProps) {
 
   const resuming = copy.phase === "paused" || copy.phase === "snoozed";
   const primaryLabel = primaryActionLabel(copy.phase);
+  const waiting = copy.phase === "awaiting" ? snapshot.pending : null;
+  const offerSnooze = waiting !== null && settings.snoozeEnabled;
 
   return (
     <div className="flex h-full flex-col bg-app">
@@ -62,29 +73,56 @@ export function MainWindow({ settings, snapshot, actions }: MainWindowProps) {
           {copy.support}
         </p>
 
-        <PrimaryButton
-          className="mt-4"
-          onClick={resuming ? actions.onResume : actions.onPause}
-          title={`${primaryLabel} reminders`}
-          ariaLabel={`${primaryLabel} reminders`}
-          disabled={copy.phase === "disabled"}
-        >
-          {resuming ? (
-            <PlayIcon className="h-[15px] w-[15px]" />
-          ) : (
-            <PauseIcon className="h-[15px] w-[15px]" />
-          )}
-          {primaryLabel}
-        </PrimaryButton>
+        {waiting ? (
+          <PrimaryButton
+            className="mt-4"
+            onClick={() => actions.onTakeBreak(waiting.id)}
+            title={breakActionLabel()}
+          >
+            {waiting.kind === "movement" ? (
+              <MovementIcon className="h-[16px] w-[16px]" />
+            ) : (
+              <EyeIcon className="h-[16px] w-[16px]" />
+            )}
+            {breakActionLabel()}
+          </PrimaryButton>
+        ) : (
+          <PrimaryButton
+            className="mt-4"
+            onClick={resuming ? actions.onResume : actions.onPause}
+            title={`${primaryLabel} reminders`}
+            ariaLabel={`${primaryLabel} reminders`}
+            disabled={copy.phase === "disabled"}
+          >
+            {resuming ? (
+              <PlayIcon className="h-[15px] w-[15px]" />
+            ) : (
+              <PauseIcon className="h-[15px] w-[15px]" />
+            )}
+            {primaryLabel}
+          </PrimaryButton>
+        )}
 
         <div className="mt-3 flex items-stretch gap-2.5">
-          <SelectField
-            className="flex-1"
-            label="Reminder interval"
-            value={String(snapshot.intervalMinutes)}
-            options={intervalOptions}
-            onChange={(value) => actions.onSetInterval(Number(value))}
-          />
+          {offerSnooze ? (
+            <SecondaryButton
+              className="flex-1"
+              size="lg"
+              onClick={() => actions.onSnooze(waiting.id)}
+              title={snoozeActionLabel()}
+            >
+              <ClockIcon className="h-[16px] w-[16px]" />
+              {snoozeActionLabel()}
+            </SecondaryButton>
+          ) : (
+            <SelectField
+              className="flex-1"
+              label="Reminder interval"
+              value={String(snapshot.intervalMinutes)}
+              options={intervalOptions}
+              onChange={(value) => actions.onSetInterval(Number(value))}
+            />
+          )}
           <IconButton label="Settings" onClick={actions.onOpenSettings}>
             <SettingsIcon className="h-[18px] w-[18px]" />
           </IconButton>

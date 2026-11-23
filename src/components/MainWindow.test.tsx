@@ -23,6 +23,7 @@ function snapshot(overrides: Partial<Snapshot> = {}): Snapshot {
     nextKind: "eyes",
     nextAtMs: Date.UTC(2026, 3, 13, 10, 29),
     snoozeRemainingMs: null,
+    pending: null,
     ...overrides,
   };
 }
@@ -32,6 +33,8 @@ function actions(overrides: Partial<MainWindowActions> = {}): MainWindowActions 
     onPause: vi.fn(),
     onResume: vi.fn(),
     onSetInterval: vi.fn(),
+    onTakeBreak: vi.fn(),
+    onSnooze: vi.fn(),
     onOpenSettings: vi.fn(),
     onHide: vi.fn(),
     onMinimize: vi.fn(),
@@ -108,6 +111,73 @@ describe("<MainWindow />", () => {
     expect(screen.getByText("--:--")).toBeTruthy();
     const button = screen.getByRole("button", { name: /Pause reminders/i });
     expect((button as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("waits for a choice when a reminder is due", () => {
+    const handlers = actions();
+    render(
+      <MainWindow
+        settings={settings}
+        snapshot={snapshot({
+          state: "awaiting",
+          remainingMs: 0,
+          remainingFraction: 0,
+          nextAtMs: null,
+          pending: { id: 7, kind: "movement" },
+        })}
+        actions={handlers}
+      />,
+    );
+
+    expect(screen.getByText("Time to move a little")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Pause reminders/i })).toBeNull();
+    expect(screen.queryByRole("combobox", { name: "Reminder interval" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Take a 3-minute break" }));
+    expect(handlers.onTakeBreak).toHaveBeenCalledWith(7);
+
+    fireEvent.click(screen.getByRole("button", { name: "Snooze 10 minutes" }));
+    expect(handlers.onSnooze).toHaveBeenCalledWith(7);
+  });
+
+  it("offers only the break when snoozing is turned off", () => {
+    render(
+      <MainWindow
+        settings={{ ...settings, snoozeEnabled: false }}
+        snapshot={snapshot({
+          state: "awaiting",
+          remainingMs: 0,
+          pending: { id: 3, kind: "eyes" },
+        })}
+        actions={actions()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Take a 3-minute break" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Snooze/i })).toBeNull();
+    expect(screen.getByRole("combobox", { name: "Reminder interval" })).toBeTruthy();
+  });
+
+  it("counts the break down and offers pause during it", () => {
+    const handlers = actions();
+    render(
+      <MainWindow
+        settings={settings}
+        snapshot={snapshot({
+          state: "break",
+          remainingMs: 2 * 60 * 1000 + 41 * 1000,
+          remainingFraction: 161 / 180,
+          pending: { id: 7, kind: "eyes" },
+        })}
+        actions={handlers}
+      />,
+    );
+
+    expect(screen.getByText("Eye break")).toBeTruthy();
+    expect(screen.getByText("02:41")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Pause reminders/i }));
+    expect(handlers.onPause).toHaveBeenCalledTimes(1);
+    expect(handlers.onTakeBreak).not.toHaveBeenCalled();
   });
 
   it("forwards interval changes as numbers", () => {

@@ -33,6 +33,12 @@ export default function App() {
         onSetInterval: (minutes: number) => {
           void controller.update({ intervalMinutes: minutes });
         },
+        onTakeBreak: (reminderId: number) => {
+          void controller.takeBreak(reminderId);
+        },
+        onSnooze: (reminderId: number) => {
+          void controller.snooze(reminderId);
+        },
         onOpenSettings: () => {
           void controller.openSettings();
         },

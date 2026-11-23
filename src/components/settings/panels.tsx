@@ -1,7 +1,9 @@
 import { cn } from "@/lib/cn";
 import { formatMinutes, reminderLabel } from "@/lib/format";
+import { snoozeActionLabel } from "@/lib/presentation";
 import {
   INTERVAL_OPTIONS,
+  SNOOZE_MINUTES,
   type AppInfo,
   type AutostartStatus,
   type NotificationStatus,
@@ -145,7 +147,9 @@ export function RemindersPanel({
   const canSnooze =
     settings.snoozeEnabled &&
     !bothDisabled(settings) &&
-    snapshot.state !== "paused";
+    (snapshot.state === "running" ||
+      snapshot.state === "snoozed" ||
+      snapshot.state === "awaiting");
 
   return (
     <>
@@ -185,7 +189,7 @@ export function RemindersPanel({
         <SettingRow
           icon={<BellIcon className="h-[18px] w-[18px]" />}
           title="Allow snoozing"
-          description="Adds a five minute snooze action to the tray menu and this window."
+          description={`Lets you postpone a reminder by ${SNOOZE_MINUTES} minutes from the main window, the tray and this window.`}
           control={
             <Toggle
               label="Allow snoozing"
@@ -217,13 +221,13 @@ export function RemindersPanel({
         </SecondaryButton>
         <SecondaryButton onClick={onSnooze} disabled={!canSnooze}>
           <ClockIcon className="h-[15px] w-[15px]" />
-          Snooze 5 minutes
+          {snoozeActionLabel()}
         </SecondaryButton>
       </div>
       <p className="mt-2.5 text-[12.5px] leading-relaxed text-subtle">
         The test uses the category of the next scheduled reminder, so it verifies
-        the real delivery path. Snoozing schedules a single reminder five minutes
-        from now.
+        the real delivery path. Snoozing schedules a single reminder{" "}
+        {SNOOZE_MINUTES} minutes from now.
       </p>
 
       <div className="mt-3 space-y-2">

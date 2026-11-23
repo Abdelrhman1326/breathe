@@ -50,7 +50,11 @@ export function SecondaryButton({
   disabled,
   className,
   title,
-}: ButtonProps) {
+  size = "md",
+}: ButtonProps & {
+  /** `lg` matches the main window's 44px controls. */
+  size?: "md" | "lg";
+}) {
   return (
     <button
       type="button"
@@ -58,8 +62,11 @@ export function SecondaryButton({
       disabled={disabled}
       title={title}
       className={cn(
-        "inline-flex h-9 items-center justify-center gap-2 rounded-xl border border-line",
-        "bg-surface px-3.5 text-[13px] font-medium text-fg transition-colors",
+        "inline-flex items-center justify-center gap-2 border border-line",
+        size === "lg"
+          ? "h-11 rounded-[14px] text-[14px]"
+          : "h-9 rounded-xl text-[13px]",
+        "bg-surface px-3.5 font-medium text-fg transition-colors",
         "hover:bg-surface-hover active:bg-line",
         "disabled:cursor-not-allowed disabled:opacity-45",
         className,

@@ -18,6 +18,7 @@ import {
   sendTestNotification,
   setAutostart,
   snoozeReminders,
+  takeBreak as takeBreakCommand,
 } from "@/lib/ipc";
 import { applyTheme, resolveTheme, systemPrefersDark, watchSystemTheme } from "@/lib/theme";
 import type {
@@ -47,7 +48,9 @@ export interface BreatheController {
   update: (patch: SettingsPatch) => Promise<void>;
   pause: () => Promise<void>;
   resume: () => Promise<void>;
-  snooze: () => Promise<void>;
+  /** Snoozes the waiting reminder when given its id, else the countdown. */
+  snooze: (reminderId?: number) => Promise<void>;
+  takeBreak: (reminderId: number) => Promise<void>;
   openSettings: () => Promise<void>;
   hide: () => Promise<void>;
   minimize: () => Promise<void>;
@@ -216,13 +219,29 @@ export function useBreathe(): BreatheController {
     }
   }, [fail]);
 
-  const snooze = useCallback(async () => {
-    try {
-      if (mounted.current) setSnapshot(await snoozeReminders());
-    } catch (error) {
-      fail(error);
-    }
-  }, [fail]);
+  const snooze = useCallback(
+    async (reminderId?: number) => {
+      try {
+        const next = await snoozeReminders(reminderId);
+        if (mounted.current) setSnapshot(next);
+      } catch (error) {
+        fail(error);
+      }
+    },
+    [fail],
+  );
+
+  const takeBreak = useCallback(
+    async (reminderId: number) => {
+      try {
+        const next = await takeBreakCommand(reminderId);
+        if (mounted.current) setSnapshot(next);
+      } catch (error) {
+        fail(error);
+      }
+    },
+    [fail],
+  );
 
   const handleOpenSettings = useCallback(async () => {
     try {
@@ -311,6 +330,7 @@ export function useBreathe(): BreatheController {
       pause,
       resume,
       snooze,
+      takeBreak,
       openSettings: handleOpenSettings,
       hide,
       minimize,
@@ -334,6 +354,7 @@ export function useBreathe(): BreatheController {
       pause,
       resume,
       snooze,
+      takeBreak,
       handleOpenSettings,
       hide,
       minimize,

@@ -27,6 +27,7 @@ function snapshot(overrides: Partial<Snapshot> = {}): Snapshot {
     nextKind: "eyes",
     nextAtMs: Date.UTC(2026, 3, 13, 10, 29),
     snoozeRemainingMs: null,
+    pending: null,
     ...overrides,
   };
 }
@@ -73,6 +74,39 @@ describe("describeMainWindow", () => {
     expect(copy.support).toMatch(/^Next reminder at /);
   });
 
+  it("asks for a choice when a reminder is due", () => {
+    const copy = describeMainWindow(
+      settings,
+      snapshot({ state: "awaiting", remainingMs: 0, pending: { id: 1, kind: "eyes" } }),
+    );
+    expect(copy.phase).toBe("awaiting");
+    expect(copy.label).toBe("Time to rest your eyes");
+    expect(copy.time).toBe("00:00");
+    expect(copy.muted).toBe(false);
+  });
+
+  it("names the movement reminder that is waiting", () => {
+    const copy = describeMainWindow(
+      settings,
+      snapshot({ state: "awaiting", remainingMs: 0, pending: { id: 2, kind: "movement" } }),
+    );
+    expect(copy.label).toBe("Time to move a little");
+  });
+
+  it("counts the break down with its own caption", () => {
+    const copy = describeMainWindow(
+      settings,
+      snapshot({
+        state: "break",
+        remainingMs: 2 * 60 * 1000,
+        pending: { id: 2, kind: "movement" },
+      }),
+    );
+    expect(copy.phase).toBe("break");
+    expect(copy.label).toBe("Movement break");
+    expect(copy.time).toBe("02:00");
+  });
+
   it("hides the countdown when every reminder category is off", () => {
     const copy = describeMainWindow(
       { ...settings, eyesEnabled: false, movementEnabled: false },
@@ -86,6 +120,11 @@ describe("describeMainWindow", () => {
 });
 
 describe("primaryActionLabel", () => {
+  it("offers the break while a reminder waits", () => {
+    expect(primaryActionLabel("awaiting")).toBe("Take a 3-minute break");
+    expect(primaryActionLabel("break")).toBe("Pause");
+  });
+
   it("offers resume from paused and snoozed, otherwise pause", () => {
     expect(primaryActionLabel("running")).toBe("Pause");
     expect(primaryActionLabel("paused")).toBe("Resume");

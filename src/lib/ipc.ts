@@ -10,6 +10,7 @@ import type {
   NotificationStatus,
   TestNotificationResult,
 } from "./types";
+import { BREAK_MINUTES, SNOOZE_MINUTES } from "./types";
 
 /**
  * All privileged work happens in Rust. The frontend only ever calls these
@@ -52,6 +53,7 @@ let mockSnapshot: Snapshot = {
   nextKind: "eyes",
   nextAtMs: Date.now() + 45 * 60 * 1000,
   snoozeRemainingMs: null,
+  pending: null,
 };
 
 function mockRefresh(): Snapshot {
@@ -106,8 +108,15 @@ const mockEngine = (() => {
     },
     snooze(): void {
       mockSnapshot.state = "snoozed";
-      mockSnapshot.remainingMs = 5 * 60 * 1000;
-      mockSnapshot.snoozeRemainingMs = 5 * 60 * 1000;
+      mockSnapshot.remainingMs = SNOOZE_MINUTES * 60 * 1000;
+      mockSnapshot.snoozeRemainingMs = SNOOZE_MINUTES * 60 * 1000;
+      mockSnapshot.pending = null;
+      mockRefresh();
+    },
+    takeBreak(): void {
+      if (mockSnapshot.state !== "awaiting") return;
+      mockSnapshot.state = "break";
+      mockSnapshot.remainingMs = BREAK_MINUTES * 60 * 1000;
       mockRefresh();
     },
   };
@@ -160,12 +169,25 @@ export async function resumeReminders(): Promise<Snapshot> {
   return invoke<Snapshot>("resume_reminders");
 }
 
-export async function snoozeReminders(): Promise<Snapshot> {
+/**
+ * Snoozes. Pass the id of a waiting reminder to snooze only that reminder (a
+ * stale id is ignored by Rust); omit it to snooze the current countdown.
+ */
+export async function snoozeReminders(reminderId?: number): Promise<Snapshot> {
   if (!isTauri()) {
     mockEngine.snooze();
     return { ...mockSnapshot };
   }
-  return invoke<Snapshot>("snooze_reminders");
+  return invoke<Snapshot>("snooze_reminders", { reminderId: reminderId ?? null });
+}
+
+/** Takes the break for the waiting reminder. A stale id is ignored by Rust. */
+export async function takeBreak(reminderId: number): Promise<Snapshot> {
+  if (!isTauri()) {
+    mockEngine.takeBreak();
+    return { ...mockSnapshot };
+  }
+  return invoke<Snapshot>("take_break", { reminderId });
 }
 
 export async function sendTestNotification(

@@ -387,6 +387,7 @@ fn snooze(app: &AppHandle, expected: Option<u64>) -> Result<(), String> {
         scheduler.snooze(expected)?
     };
     if applied {
+        eprintln!("[breathe] snoozed (reminder {expected:?})");
         emit_snapshot(app);
     }
     Ok(())
@@ -399,6 +400,7 @@ fn start_break(app: &AppHandle, expected: Option<u64>) -> Result<(), String> {
         scheduler.take_break(expected)
     };
     if applied {
+        eprintln!("[breathe] break started (reminder {expected:?})");
         emit_snapshot(app);
     }
     Ok(())
@@ -408,6 +410,8 @@ fn start_break(app: &AppHandle, expected: Option<u64>) -> Result<(), String> {
 /// itself is never persisted.
 fn apply_running(app: &AppHandle, running: bool) -> Result<(), String> {
     let state = app.state::<AppState>();
+    let action = if running { "resume" } else { "pause" };
+    eprintln!("[breathe] {action} requested");
 
     {
         let mut scheduler = state.scheduler.lock().map_err(lock_error)?;

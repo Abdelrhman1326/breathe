@@ -24,10 +24,12 @@ pub const TRAY_ID: &str = "breathe-tray";
 /// Menu labels, kept in one place so `sync` and `build` cannot drift apart.
 const LABEL_PAUSE: &str = "Pause Reminders";
 const LABEL_RESUME: &str = "Resume Reminders";
-const LABEL_SNOOZE: &str = "Snooze for 5 minutes";
+const LABEL_SNOOZE: &str = "Snooze for 10 minutes";
+const LABEL_BREAK: &str = "Take a 3-minute break";
 
 pub struct TrayHandles {
     pause: MenuItem<Wry>,
+    take_break: MenuItem<Wry>,
     snooze: MenuItem<Wry>,
     /// Last applied labels, so the 500 ms worker tick only touches the menu when
     /// something actually changed.
@@ -38,8 +40,35 @@ pub struct TrayHandles {
 struct Applied {
     pause_label: String,
     pause_enabled: bool,
+    break_enabled: bool,
     snooze_enabled: bool,
     tooltip: String,
+}
+
+/// What the menu should show for a schedule state. Pure, so it is testable
+/// without a tray.
+fn desired(
+    state: ScheduleState,
+    snooze_enabled: bool,
+    reminders_enabled: bool,
+    tooltip: &str,
+) -> Applied {
+    let pauses = matches!(
+        state,
+        ScheduleState::Running | ScheduleState::Awaiting | ScheduleState::OnBreak
+    );
+    Applied {
+        pause_label: if pauses { LABEL_PAUSE } else { LABEL_RESUME }.to_string(),
+        pause_enabled: reminders_enabled,
+        break_enabled: state == ScheduleState::Awaiting,
+        snooze_enabled: snooze_enabled
+            && reminders_enabled
+            && matches!(
+                state,
+                ScheduleState::Running | ScheduleState::Snoozed | ScheduleState::Awaiting
+            ),
+        tooltip: tooltip.to_string(),
+    }
 }
 
 impl TrayHandles {
@@ -55,16 +84,7 @@ impl TrayHandles {
         reminders_enabled: bool,
         tooltip: &str,
     ) -> bool {
-        let next = Applied {
-            pause_label: if state == ScheduleState::Running {
-                LABEL_PAUSE.to_string()
-            } else {
-                LABEL_RESUME.to_string()
-            },
-            pause_enabled: reminders_enabled,
-            snooze_enabled: snooze_enabled && reminders_enabled && state != ScheduleState::Paused,
-            tooltip: tooltip.to_string(),
-        };
+        let next = desired(state, snooze_enabled, reminders_enabled, tooltip);
 
         let mut applied = match self.applied.lock() {
             Ok(applied) => applied,
@@ -76,6 +96,9 @@ impl TrayHandles {
         }
         if applied.pause_enabled != next.pause_enabled {
             let _ = self.pause.set_enabled(next.pause_enabled);
+        }
+        if applied.break_enabled != next.break_enabled {
+            let _ = self.take_break.set_enabled(next.break_enabled);
         }
         if applied.snooze_enabled != next.snooze_enabled {
             let _ = self.snooze.set_enabled(next.snooze_enabled);
@@ -90,6 +113,7 @@ impl TrayHandles {
 pub fn build(app: &AppHandle) -> tauri::Result<TrayHandles> {
     let open = MenuItem::with_id(app, "open", "Open Breathe", true, None::<&str>)?;
     let pause = MenuItem::with_id(app, "pause", LABEL_PAUSE, true, None::<&str>)?;
+    let take_break = MenuItem::with_id(app, "break", LABEL_BREAK, false, None::<&str>)?;
     let snooze = MenuItem::with_id(app, "snooze", LABEL_SNOOZE, true, None::<&str>)?;
     let settings = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
@@ -102,6 +126,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<TrayHandles> {
             &open,
             &before_actions,
             &pause,
+            &take_break,
             &snooze,
             &settings,
             &before_quit,
@@ -125,6 +150,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<TrayHandles> {
 
     Ok(TrayHandles {
         pause,
+        take_break,
         snooze,
         applied: Mutex::new(Applied::default()),
     })
@@ -134,6 +160,7 @@ fn on_menu_event(app: &AppHandle, event: tauri::menu::MenuEvent) {
     match event.id().as_ref() {
         "open" => crate::commands::show_main_window(app),
         "pause" => crate::commands::toggle_scheduling(app),
+        "break" => crate::commands::break_from_tray(app),
         "snooze" => crate::commands::snooze_from_tray(app),
         "settings" => {
             let app = app.clone();
@@ -145,5 +172,54 @@ fn on_menu_event(app: &AppHandle, event: tauri::menu::MenuEvent) {
         }
         "quit" => crate::commands::quit(app),
         other => eprintln!("[breathe] ignoring unknown tray action {other}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_waiting_reminder_offers_the_break_and_the_snooze() {
+        let menu = desired(ScheduleState::Awaiting, true, true, "");
+        assert!(menu.break_enabled);
+        assert!(menu.snooze_enabled);
+        assert_eq!(menu.pause_label, LABEL_PAUSE);
+    }
+
+    #[test]
+    fn the_break_is_only_offered_while_a_reminder_waits() {
+        for state in [
+            ScheduleState::Running,
+            ScheduleState::Paused,
+            ScheduleState::Snoozed,
+            ScheduleState::OnBreak,
+        ] {
+            assert!(!desired(state, true, true, "").break_enabled, "{state:?}");
+        }
+    }
+
+    #[test]
+    fn snooze_follows_the_setting_and_the_state() {
+        assert!(!desired(ScheduleState::Awaiting, false, true, "").snooze_enabled);
+        assert!(!desired(ScheduleState::Paused, true, true, "").snooze_enabled);
+        assert!(!desired(ScheduleState::OnBreak, true, true, "").snooze_enabled);
+        assert!(desired(ScheduleState::Running, true, true, "").snooze_enabled);
+    }
+
+    #[test]
+    fn paused_and_snoozed_schedules_offer_resume() {
+        assert_eq!(
+            desired(ScheduleState::Paused, true, true, "").pause_label,
+            LABEL_RESUME
+        );
+        assert_eq!(
+            desired(ScheduleState::Snoozed, true, true, "").pause_label,
+            LABEL_RESUME
+        );
+        assert_eq!(
+            desired(ScheduleState::OnBreak, true, true, "").pause_label,
+            LABEL_PAUSE
+        );
     }
 }

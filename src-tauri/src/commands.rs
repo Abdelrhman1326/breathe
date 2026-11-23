@@ -140,9 +140,20 @@ pub fn resume_reminders(app: AppHandle) -> Result<Snapshot, String> {
     Ok(app.state::<AppState>().snapshot())
 }
 
+/// Snoozes. With `reminder_id` (the popup), only that waiting reminder is
+/// snoozed and a stale id is ignored; without it (Settings), the current
+/// countdown or waiting reminder is.
 #[tauri::command]
-pub fn snooze_reminders(app: AppHandle) -> Result<Snapshot, String> {
-    snooze(&app)?;
+pub fn snooze_reminders(app: AppHandle, reminder_id: Option<u64>) -> Result<Snapshot, String> {
+    snooze(&app, reminder_id)?;
+    Ok(app.state::<AppState>().snapshot())
+}
+
+/// Takes the break for the waiting reminder. A stale or repeated request is
+/// ignored and simply returns the current snapshot.
+#[tauri::command]
+pub fn take_break(app: AppHandle, reminder_id: Option<u64>) -> Result<Snapshot, String> {
+    start_break(&app, reminder_id)?;
     Ok(app.state::<AppState>().snapshot())
 }
 
@@ -325,8 +336,8 @@ pub fn toggle_scheduling(app: &AppHandle) {
     let running = {
         let state = app.state::<AppState>();
         let is_running = match state.scheduler.lock() {
-            Ok(scheduler) => scheduler.state() == ScheduleState::Running,
-            Err(poisoned) => poisoned.into_inner().state() == ScheduleState::Running,
+            Ok(scheduler) => counts_as_running(scheduler.state()),
+            Err(poisoned) => counts_as_running(poisoned.into_inner().state()),
         };
         is_running
     };
@@ -337,9 +348,23 @@ pub fn toggle_scheduling(app: &AppHandle) {
 }
 
 pub fn snooze_from_tray(app: &AppHandle) {
-    if let Err(error) = snooze(app) {
+    if let Err(error) = snooze(app, None) {
         eprintln!("[breathe] snooze refused: {error}");
     }
+}
+
+pub fn break_from_tray(app: &AppHandle) {
+    if let Err(error) = start_break(app, None) {
+        eprintln!("[breathe] could not start the break: {error}");
+    }
+}
+
+/// States in which the tray's toggle pauses rather than resumes.
+fn counts_as_running(state: ScheduleState) -> bool {
+    matches!(
+        state,
+        ScheduleState::Running | ScheduleState::Awaiting | ScheduleState::OnBreak
+    )
 }
 
 pub fn quit(app: &AppHandle) {
@@ -355,13 +380,27 @@ pub fn quit(app: &AppHandle) {
 /* Internals                                                                  */
 /* -------------------------------------------------------------------------- */
 
-fn snooze(app: &AppHandle) -> Result<(), String> {
+fn snooze(app: &AppHandle, expected: Option<u64>) -> Result<(), String> {
     let state = app.state::<AppState>();
-    {
+    let applied = {
         let mut scheduler = state.scheduler.lock().map_err(lock_error)?;
-        scheduler.snooze()?;
+        scheduler.snooze(expected)?
+    };
+    if applied {
+        emit_snapshot(app);
     }
-    emit_snapshot(app);
+    Ok(())
+}
+
+fn start_break(app: &AppHandle, expected: Option<u64>) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    let applied = {
+        let mut scheduler = state.scheduler.lock().map_err(lock_error)?;
+        scheduler.take_break(expected)
+    };
+    if applied {
+        emit_snapshot(app);
+    }
     Ok(())
 }
 
@@ -434,6 +473,8 @@ fn tooltip_for(snapshot: &Snapshot) -> String {
         ScheduleState::Running => format!("Breathe — next break in {minutes:02}:{seconds:02}"),
         ScheduleState::Paused => format!("Breathe — paused at {minutes:02}:{seconds:02}"),
         ScheduleState::Snoozed => format!("Breathe — snoozed, {minutes:02}:{seconds:02} left"),
+        ScheduleState::Awaiting => "Breathe — time for a break".to_string(),
+        ScheduleState::OnBreak => format!("Breathe — on a break, {minutes:02}:{seconds:02} left"),
         ScheduleState::Stopped => "Breathe — stopped".to_string(),
     }
 }
@@ -456,6 +497,7 @@ mod tests {
             next_kind: kind,
             next_at_ms: None,
             snooze_remaining_ms: None,
+            pending: None,
         }
     }
 

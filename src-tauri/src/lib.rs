@@ -27,7 +27,7 @@ use tauri::Manager;
 
 use clock::SystemClock;
 use model::{ScheduleState, Settings, Snapshot};
-use scheduler::{Scheduler, SchedulerConfig, TICK_INTERVAL_MS};
+use scheduler::{Event, Scheduler, SchedulerConfig, TICK_INTERVAL_MS};
 
 /// Shared, application-wide state. All of it hangs off a single `manage` call.
 pub struct AppState {
@@ -124,7 +124,7 @@ fn spawn_worker(app: tauri::AppHandle, receiver: Receiver<()>) {
                 Err(mpsc::RecvTimeoutError::Timeout) => {}
             }
 
-            let due = {
+            let event = {
                 let state = app.state::<AppState>();
                 let mut scheduler = match state.scheduler.lock() {
                     Ok(scheduler) => scheduler,
@@ -138,20 +138,29 @@ fn spawn_worker(app: tauri::AppHandle, receiver: Receiver<()>) {
                 scheduler.tick()
             };
 
-            if let Some(due) = due {
-                match notify::deliver(&app, due.kind) {
-                    Ok(()) => eprintln!(
-                        "[breathe] reminder delivered: {:?}{}",
-                        due.kind,
-                        if due.snoozed { " (snoozed)" } else { "" }
-                    ),
-                    Err(error) => {
-                        eprintln!(
+            match event {
+                Some(Event::ReminderDue { reminder, snoozed }) => {
+                    match notify::deliver(&app, reminder.kind) {
+                        Ok(()) => eprintln!(
+                            "[breathe] reminder {} delivered: {:?}{}",
+                            reminder.id,
+                            reminder.kind,
+                            if snoozed { " (snoozed)" } else { "" }
+                        ),
+                        Err(error) => eprintln!(
                             "[breathe] could not deliver the {:?} reminder: {error}",
-                            due.kind
-                        )
+                            reminder.kind
+                        ),
                     }
                 }
+                Some(Event::BreakEnded { kind }) => {
+                    if let Err(error) = notify::deliver_break_over(&app) {
+                        eprintln!(
+                            "[breathe] could not announce the end of the {kind:?} break: {error}"
+                        );
+                    }
+                }
+                None => {}
             }
 
             let snapshot = commands::emit_snapshot(&app);
@@ -224,6 +233,7 @@ pub fn run() {
             commands::pause_reminders,
             commands::resume_reminders,
             commands::snooze_reminders,
+            commands::take_break,
             commands::send_test_notification,
             commands::set_autostart,
             commands::hide_window,

@@ -13,6 +13,8 @@ mod clock;
 mod commands;
 mod model;
 mod notify;
+mod popup;
+mod popup_window;
 mod scheduler;
 mod settings_store;
 mod theme;
@@ -21,12 +23,13 @@ mod tray;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use tauri::Manager;
 
 use clock::SystemClock;
 use model::{ScheduleState, Settings, Snapshot};
+use popup::{PopupChange, PopupContent, PopupManager};
 use scheduler::{Event, Scheduler, SchedulerConfig, TICK_INTERVAL_MS};
 
 /// Shared, application-wide state. All of it hangs off a single `manage` call.
@@ -37,6 +40,7 @@ pub struct AppState {
     hidden: AtomicBool,
     tray: Mutex<Option<Arc<tray::TrayHandles>>>,
     stop_worker: Mutex<Option<Sender<()>>>,
+    popup: Mutex<PopupManager>,
 }
 
 impl AppState {
@@ -58,6 +62,7 @@ impl AppState {
             hidden: AtomicBool::new(false),
             tray: Mutex::new(None),
             stop_worker: Mutex::new(None),
+            popup: Mutex::new(PopupManager::new()),
         }
     }
 
@@ -92,6 +97,16 @@ impl AppState {
             .stop_worker
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(sender);
+    }
+
+    /// Runs `f` against the popup manager. The lock is released before the
+    /// caller touches the window, so window calls never run under it.
+    pub fn with_popup<T>(&self, f: impl FnOnce(&mut PopupManager) -> T) -> T {
+        let mut popup = self
+            .popup
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        f(&mut popup)
     }
 
     pub fn stop_worker(&self) {
@@ -140,7 +155,13 @@ fn spawn_worker(app: tauri::AppHandle, receiver: Receiver<()>) {
 
             match event {
                 Some(Event::ReminderDue { reminder, snoozed }) => {
-                    match notify::deliver(&app, reminder.kind) {
+                    let delivered = if popup_window::available(&app) {
+                        show_popup(&app, PopupContent::Reminder { reminder });
+                        Ok(())
+                    } else {
+                        notify::deliver(&app, reminder.kind)
+                    };
+                    match delivered {
                         Ok(()) => eprintln!(
                             "[breathe] reminder {} delivered: {:?}{}",
                             reminder.id,
@@ -154,7 +175,9 @@ fn spawn_worker(app: tauri::AppHandle, receiver: Receiver<()>) {
                     }
                 }
                 Some(Event::BreakEnded { kind }) => {
-                    if let Err(error) = notify::deliver_break_over(&app) {
+                    if popup_window::available(&app) {
+                        show_popup(&app, PopupContent::BreakOver { kind });
+                    } else if let Err(error) = notify::deliver_break_over(&app) {
                         eprintln!(
                             "[breathe] could not announce the end of the {kind:?} break: {error}"
                         );
@@ -164,11 +187,28 @@ fn spawn_worker(app: tauri::AppHandle, receiver: Receiver<()>) {
             }
 
             let snapshot = commands::emit_snapshot(&app);
+            let change = app
+                .state::<AppState>()
+                .with_popup(|popup| popup.reconcile(&snapshot, SystemTime::now()));
+            if let Some(change) = change {
+                popup_window::apply(&app, change);
+            }
             commands::sync_tray(&app, &snapshot);
         });
 
     if let Err(error) = worker {
         eprintln!("[breathe] could not start the scheduler thread: {error}");
+    }
+}
+
+/// Shows Breathe's popup with `content`, unless that exact reminder is already
+/// on screen.
+pub(crate) fn show_popup(app: &tauri::AppHandle, content: PopupContent) {
+    let change = app
+        .state::<AppState>()
+        .with_popup(|popup| popup.show(content, SystemTime::now()));
+    if let Some(change @ PopupChange::Show(_)) = change {
+        popup_window::apply(app, change);
     }
 }
 
@@ -207,6 +247,12 @@ pub fn run() {
 
             theme::apply(&handle, settings.theme);
 
+            // Created hidden and reused. If it cannot be created, reminders
+            // fall back to native notifications.
+            if let Err(error) = popup_window::create(&handle) {
+                eprintln!("[breathe] {error}; using native notifications instead");
+            }
+
             match tray::build(&handle) {
                 Ok(handles) => app.state::<AppState>().install_tray(handles),
                 Err(error) => eprintln!(
@@ -234,6 +280,8 @@ pub fn run() {
             commands::resume_reminders,
             commands::snooze_reminders,
             commands::take_break,
+            commands::get_popup,
+            commands::dismiss_popup,
             commands::send_test_notification,
             commands::set_autostart,
             commands::hide_window,

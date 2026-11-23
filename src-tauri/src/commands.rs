@@ -11,6 +11,8 @@ use crate::model::{
     AppInfo, AutostartStatus, NotificationStatus, ReminderKind, ScheduleState, Settings,
     SettingsPatch, Snapshot, TestNotificationResult, EVENT_SETTINGS, EVENT_SNAPSHOT,
 };
+use crate::popup::{PopupContent, PopupView};
+use crate::popup_window;
 use crate::scheduler::SchedulerConfig;
 use crate::theme::{self, MAIN_WINDOW, SETTINGS_WINDOW};
 use crate::{autostart, notify, settings_store, AppState};
@@ -166,6 +168,16 @@ pub fn send_test_notification(
         .or_else(|| app.state::<AppState>().snapshot().next_kind)
         .unwrap_or(ReminderKind::Eyes);
 
+    // The preview goes through the same window as real reminders.
+    if popup_window::available(&app) {
+        crate::show_popup(&app, PopupContent::Test { kind: resolved });
+        return TestNotificationResult {
+            delivered: true,
+            kind: resolved,
+            error: None,
+        };
+    }
+
     match notify::deliver(&app, resolved) {
         Ok(()) => TestNotificationResult {
             delivered: true,
@@ -180,6 +192,25 @@ pub fn send_test_notification(
                 error: Some(error),
             }
         }
+    }
+}
+
+/// What the popup should currently render. The popup window calls this when
+/// it loads, so an event sent before its webview was ready is not lost.
+#[tauri::command]
+pub fn get_popup(state: State<'_, AppState>) -> Option<PopupView> {
+    state.with_popup(|popup| popup.current())
+}
+
+/// Hides the popup the user closed. Never answers a reminder: the main window
+/// and tray still offer the break and the snooze.
+#[tauri::command]
+pub fn dismiss_popup(app: AppHandle, seq: u64) {
+    let change = app
+        .state::<AppState>()
+        .with_popup(|popup| popup.dismiss(seq));
+    if let Some(change) = change {
+        popup_window::apply(&app, change);
     }
 }
 

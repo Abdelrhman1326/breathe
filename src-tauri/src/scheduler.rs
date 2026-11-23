@@ -297,7 +297,7 @@ impl<C: Clock> Scheduler<C> {
             next_kind: self.next_kind(),
             next_at_ms: next_at.map(to_epoch_ms),
             snooze_remaining_ms: (self.state == ScheduleState::Snoozed)
-                .then(|| remaining.as_millis() as i64),
+                .then_some(remaining.as_millis() as i64),
         }
     }
 

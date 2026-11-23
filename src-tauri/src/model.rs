@@ -284,7 +284,10 @@ mod tests {
     #[test]
     fn patch_rejects_unknown_fields() {
         let result = serde_json::from_str::<SettingsPatch>(r#"{"nope":1}"#);
-        assert!(result.is_err(), "unknown keys must not be silently accepted");
+        assert!(
+            result.is_err(),
+            "unknown keys must not be silently accepted"
+        );
     }
 
     #[test]
@@ -295,10 +298,9 @@ mod tests {
 
     #[test]
     fn patch_applies_only_the_fields_present() {
-        let patch: SettingsPatch = serde_json::from_str(
-            r#"{"intervalMinutes":60,"eyesEnabled":false,"theme":"dark"}"#,
-        )
-        .expect("deserialises");
+        let patch: SettingsPatch =
+            serde_json::from_str(r#"{"intervalMinutes":60,"eyesEnabled":false,"theme":"dark"}"#)
+                .expect("deserialises");
 
         let updated = patch.apply(Settings::default()).expect("valid patch");
 

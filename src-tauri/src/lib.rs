@@ -108,9 +108,7 @@ impl AppState {
 
 /// True when the app was started by the autostart entry, or explicitly hidden.
 fn launched_hidden() -> bool {
-    std::env::args().any(|argument| {
-        argument == autostart::AUTOSTART_FLAG || argument == "--hidden"
-    })
+    std::env::args().any(|argument| argument == autostart::AUTOSTART_FLAG || argument == "--hidden")
 }
 
 /// The one and only tick loop.
@@ -148,7 +146,10 @@ fn spawn_worker(app: tauri::AppHandle, receiver: Receiver<()>) {
                         if due.snoozed { " (snoozed)" } else { "" }
                     ),
                     Err(error) => {
-                        eprintln!("[breathe] could not deliver the {:?} reminder: {error}", due.kind)
+                        eprintln!(
+                            "[breathe] could not deliver the {:?} reminder: {error}",
+                            due.kind
+                        )
                     }
                 }
             }

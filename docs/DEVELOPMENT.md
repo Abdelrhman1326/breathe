@@ -42,7 +42,7 @@ wrapping a Lucide component with `icon(...)` rather than drawing paths by hand.
 ## Scheduler policy
 
 The scheduler lives in `scheduler.rs` behind a small API (`tick`, `pause`,
-`resume`, `set_interval`, `snooze`, `set_running`, `stop`) and an injectable
+`resume`, `take_break`, `snooze`, `set_running`, `set_config`, `stop`) and an injectable
 `Clock` trait. `SystemClock` uses wall time for the deadline and
 `CLOCK_MONOTONIC` for liveness; tests use a manual clock.
 
@@ -50,33 +50,56 @@ States:
 
 | State | Meaning |
 | --- | --- |
-| `Running` | A deadline is set; the worker delivers when it passes. |
+| `Running` | A countdown deadline is set; when it passes a reminder becomes due. |
+| `Awaiting` | A reminder is due and waits for the user's choice. No clock runs. Serialized as `"awaiting"`. |
+| `OnBreak` | The user chose the 3-minute break. When it ends, a new countdown starts. Serialized as `"break"`. |
 | `Paused` | No deadline; `frozen` holds the remaining time. |
-| `Snoozed` | A single one-off reminder is scheduled `snooze` from now. |
+| `Snoozed` | A single one-off reminder is scheduled `snooze` (10 min) from now. |
 | `Stopped` | Only while the process is shutting down. Serialized as `"quit"`. |
+
+```text
+Running ──countdown ends──▶ Awaiting ──take_break──▶ OnBreak ──3 min──▶ Running
+                              │  ▲
+                       snooze │  │ 10 min, same category
+                              ▼  │
+                            Snoozed
+```
 
 Rules, all covered by tests:
 
 - **One deadline, one delivery.** The worker ticks every 500 ms but only fires
-  when `now >= deadline`, then immediately schedules the next full interval.
-  Re-renders and duplicate listeners cannot produce duplicate reminders.
+  when `now >= deadline`, and acting on a deadline always clears or replaces
+  it. Re-renders and duplicate listeners cannot produce duplicate reminders.
+- **No silent restart.** A countdown that ends moves to `Awaiting` and stays
+  there until the user takes the break or snoozes. Only the end of the break
+  starts the next countdown. `set_running(true)` is ignored while awaiting or
+  on a break.
+- **Idempotent choices.** Every due reminder has an id; `take_break(Some(id))`
+  and `snooze(Some(id))` only act on that waiting reminder. A double click, or
+  the main window and the tray racing, applies the first choice only.
 - **Pause** freezes the remaining time and clears the deadline, so nothing can
   be delivered while paused.
 - **Resume** continues from the frozen time; if it has already elapsed, it
   starts a full interval instead.
 - **Changing the interval** restarts the countdown from the new value. If the
   schedule was snoozed, the snooze is cancelled.
-- **Snooze** replaces the current deadline with `now + 5 min`; snoozing twice
-  re-arms one timer, never two.
-- **Alternation** is a counter, not random: with both categories on, reminders
-  alternate eye → movement → eye. With one category on, that category is always
-  used. With both off the schedule is inactive.
+- **Snooze** replaces the current deadline with `now + 10 min`; snoozing twice
+  re-arms one timer, never two. A snoozed reminder returns with the same
+  category.
+- **Pause** from `Awaiting` or `OnBreak` abandons the reminder or break;
+  resuming starts a fresh countdown.
+- **Alternation** follows the breaks actually taken: with both categories on,
+  reminders alternate eye → movement → eye. A snoozed or abandoned reminder is
+  not "used up". With one category on, that category is always used. With both
+  off the schedule keeps cycling without ever waiting.
 - **Hidden is not a state.** Hiding the window only sets
   `Snapshot::window_hidden`; scheduling is unaffected.
 - **Suspend/resume.** Each tick compares wall-clock advance with monotonic
-  advance. A divergence over 5 s means the machine slept. Missed reminders are
-  **dropped, never replayed**, and the next reminder is one full interval from
-  the resume. This also avoids a burst of notifications after a long sleep.
+  advance. A divergence over 5 s means the machine slept. A countdown, snooze or
+  break that ended during sleep is **dropped, never replayed**, and the next
+  reminder is one full interval from the resume. This also avoids a burst of
+  notifications or a stale prompt after a long sleep. A reminder that was
+  already waiting stays waiting.
 
 ## IPC surface
 
@@ -223,6 +246,14 @@ busctl --user get-property org.kde.StatusNotifierWatcher /StatusNotifierWatcher 
 dbus-send --session --print-reply --dest=<bus> <item>/Menu \
   com.canonical.dbusmenu.GetLayout int32:0 int32:-1 array:string:
 # call AboutToShow first, then Event(id, "clicked", ...) to activate an item.
+```
+
+Debug builds read three optional overrides so the whole reminder cycle can be
+exercised in under a minute. They are compiled out of release builds:
+
+```sh
+BREATHE_DEV_INTERVAL_SECS=20 BREATHE_DEV_BREAK_SECS=10 BREATHE_DEV_SNOOZE_SECS=10 \
+  npm run tauri dev
 ```
 
 For visual states the frontend can be driven in a headless browser against the

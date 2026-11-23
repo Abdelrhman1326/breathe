@@ -65,15 +65,39 @@ impl SchedulerConfig {
 
 impl From<&Settings> for SchedulerConfig {
     fn from(settings: &Settings) -> Self {
-        Self {
+        let config = Self {
             interval: Duration::from_secs(u64::from(settings.interval_minutes) * 60),
             snooze: Duration::from_secs(u64::from(DEFAULT_SNOOZE_MINUTES) * 60),
             break_length: Duration::from_secs(u64::from(BREAK_MINUTES) * 60),
             eyes_enabled: settings.eyes_enabled,
             movement_enabled: settings.movement_enabled,
             snooze_enabled: settings.snooze_enabled,
-        }
+        };
+        #[cfg(debug_assertions)]
+        let config = dev_overrides(config);
+        config
     }
+}
+
+/// Debug builds only: shortens the countdown, break and snooze for manual
+/// testing, e.g. `BREATHE_DEV_INTERVAL_SECS=20 npm run tauri dev`. Compiled
+/// out of release builds, so packaged apps can never pick these up.
+#[cfg(debug_assertions)]
+fn dev_overrides(mut config: SchedulerConfig) -> SchedulerConfig {
+    fn seconds(name: &str) -> Option<Duration> {
+        let value = std::env::var(name).ok()?.parse::<u64>().ok()?;
+        (value > 0).then(|| Duration::from_secs(value))
+    }
+    if let Some(value) = seconds("BREATHE_DEV_INTERVAL_SECS") {
+        config.interval = value;
+    }
+    if let Some(value) = seconds("BREATHE_DEV_BREAK_SECS") {
+        config.break_length = value;
+    }
+    if let Some(value) = seconds("BREATHE_DEV_SNOOZE_SECS") {
+        config.snooze = value;
+    }
+    config
 }
 
 /// Something the worker has to act on, returned by [`Scheduler::tick`].

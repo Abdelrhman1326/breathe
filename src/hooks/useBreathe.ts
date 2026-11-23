@@ -256,10 +256,12 @@ export function useBreathe(): BreatheController {
     }
   }, [fail]);
 
+  const nextKind = snapshot?.nextKind ?? null;
+
   const sendTest = useCallback(async () => {
     setTesting(true);
     try {
-      const kind = snapshot?.nextKind ?? "eyes";
+      const kind = nextKind ?? "eyes";
       const result = await sendTestNotification(kind);
       if (mounted.current) {
         setTestResult(result);
@@ -270,7 +272,7 @@ export function useBreathe(): BreatheController {
     } finally {
       if (mounted.current) setTesting(false);
     }
-  }, [fail, snapshot?.nextKind]);
+  }, [fail, nextKind]);
 
   const toggleAutostart = useCallback(async (enabled: boolean) => {
     setAutostartBusy(true);

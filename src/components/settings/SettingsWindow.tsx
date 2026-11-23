@@ -78,7 +78,12 @@ export function SettingsWindow({ controller }: SettingsWindowProps) {
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-app">
-      <TitleBar onHide={controller.hide} hideLabel="Close settings" />
+      <TitleBar
+        onHide={() => {
+          void controller.hide();
+        }}
+        hideLabel="Close settings"
+      />
 
       <div className="flex min-h-0 flex-1">
         <nav

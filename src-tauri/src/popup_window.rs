@@ -265,7 +265,79 @@ mod platform {
     }
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+#[cfg(target_os = "macos")]
+mod platform {
+    use objc2_app_kit::{NSColor, NSFloatingWindowLevel, NSWindow, NSWindowCollectionBehavior};
+    use tauri::{AppHandle, WebviewWindow};
+
+    /// Corner radius of the popup, matching the card on other platforms.
+    const CORNER_RADIUS: f64 = 18.0;
+
+    /// Runs `f` with the popup's NSWindow on the main thread, where AppKit
+    /// must be called.
+    fn with_ns_window(window: &WebviewWindow, f: impl FnOnce(&NSWindow) + Send + 'static) {
+        let target = window.clone();
+        let _ = window.run_on_main_thread(move || {
+            if let Ok(pointer) = target.ns_window() {
+                // SAFETY: Tauri returns the live NSWindow backing this
+                // window, and we are on the main thread.
+                let ns_window = unsafe { &*pointer.cast::<NSWindow>() };
+                f(ns_window);
+            }
+        });
+    }
+
+    /// Floats above ordinary windows on every Space (including full-screen
+    /// ones), stays put when the app is inactive, and stays out of window
+    /// cycling. Without Tauri's private-API transparency the webview paints
+    /// an opaque background, so the card fills the window and the window
+    /// itself is rounded through its layer, with the system shadow.
+    pub fn prepare(window: &WebviewWindow) -> &'static str {
+        with_ns_window(window, |ns_window| {
+            ns_window.setLevel(NSFloatingWindowLevel);
+            ns_window.setCollectionBehavior(
+                NSWindowCollectionBehavior::CanJoinAllSpaces
+                    | NSWindowCollectionBehavior::FullScreenAuxiliary
+                    | NSWindowCollectionBehavior::Stationary
+                    | NSWindowCollectionBehavior::IgnoresCycle,
+            );
+            ns_window.setHidesOnDeactivate(false);
+            ns_window.setOpaque(false);
+            ns_window.setBackgroundColor(Some(&NSColor::clearColor()));
+            ns_window.setHasShadow(true);
+            if let Some(view) = ns_window.contentView() {
+                view.setWantsLayer(true);
+                if let Some(layer) = view.layer() {
+                    layer.setCornerRadius(CORNER_RADIUS);
+                    layer.setMasksToBounds(true);
+                }
+            }
+            ns_window.invalidateShadow();
+        });
+        "floating, non-activating, top-right"
+    }
+
+    pub fn place(app: &AppHandle, window: &WebviewWindow) {
+        // The work area already excludes the menu bar and the Dock.
+        super::place_in_corner(app, window, false);
+    }
+
+    /// tao's `show` calls makeKeyAndOrderFront, which takes key focus from
+    /// whatever the user is typing in. orderFrontRegardless shows the window
+    /// without activating Breathe or making the popup key.
+    pub fn show(window: &WebviewWindow) -> tauri::Result<()> {
+        with_ns_window(window, |ns_window| ns_window.orderFrontRegardless());
+        Ok(())
+    }
+
+    /// Mirrors `show`: tao never saw the window become visible.
+    pub fn hide(window: &WebviewWindow) -> tauri::Result<()> {
+        with_ns_window(window, |ns_window| ns_window.orderOut(None));
+        Ok(())
+    }
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
 mod platform {
     use tauri::{AppHandle, WebviewWindow};
 

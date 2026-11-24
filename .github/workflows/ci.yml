@@ -248,6 +248,79 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  macos:
+    name: macOS universal (unsigned)
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master, 2026-10-19
+        with:
+          toolchain: 1.96.0
+          targets: aarch64-apple-darwin, x86_64-apple-darwin
+          components: clippy
+
+      - name: Cache Cargo
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Run frontend tests
+        run: npm test
+
+      - name: Build frontend (required before cargo test)
+        run: npm run build
+
+      - name: Run Clippy
+        run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+
+      - name: Run Rust tests
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml
+
+      # Unsigned: there is no Developer ID certificate yet, so the bundle is
+      # ad-hoc signed by the toolchain and Gatekeeper will ask the user to
+      # confirm on first launch. Signing and notarization are a separate step.
+      - name: Build universal app and DMG
+        run: npm run tauri build -- --target universal-apple-darwin --bundles app,dmg -- --locked
+
+      - name: Verify the bundle
+        run: |
+          app="src-tauri/target/universal-apple-darwin/release/bundle/macos/Breathe.app"
+          test -d "$app"
+          exe="$app/Contents/MacOS/$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$app/Contents/Info.plist")"
+          lipo -archs "$exe" | tee /dev/stderr | grep -q "x86_64 arm64"
+          /usr/libexec/PlistBuddy -c "Print :LSMinimumSystemVersion" "$app/Contents/Info.plist" | grep -q "^11.0$"
+          ls "$app"/Contents/Resources/*.icns
+          ls src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+
+      - name: Upload DMG
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: breathe-macos-dmg
+          path: src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+          if-no-files-found: error
+          retention-days: 7
+
   aur:
     name: AUR metadata
     runs-on: ubuntu-22.04

@@ -294,6 +294,29 @@ pub fn run() {
             commands::open_settings,
             commands::quit_app,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running Breathe");
+        .build(tauri::generate_context!())
+        .expect("error while building Breathe")
+        .run(on_run_event);
+}
+
+/// App-level events.
+///
+/// * `Exit` covers every way out that does not go through Quit — notably ⌘Q
+///   from the default macOS app menu — so the scheduler always stops cleanly.
+/// * `Reopen` (macOS) fires when the Dock icon is clicked; with the window
+///   hidden to the background, that should bring it back.
+fn on_run_event(app: &tauri::AppHandle, event: tauri::RunEvent) {
+    match event {
+        tauri::RunEvent::Exit => {
+            if let Some(state) = app.try_state::<AppState>() {
+                if let Ok(mut scheduler) = state.scheduler.lock() {
+                    scheduler.stop();
+                }
+                state.stop_worker();
+            }
+        }
+        #[cfg(target_os = "macos")]
+        tauri::RunEvent::Reopen { .. } => commands::show_main_window(app),
+        _ => {}
+    }
 }

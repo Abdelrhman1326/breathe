@@ -33,6 +33,20 @@ notify-rust = "4.18"
 gtk = "0.18"
 libloading = "0.7"
 
+# The popup's macOS window behaviour (non-activating show, floating level,
+# rounded corners). Same versions Tauri already uses; public AppKit APIs only.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = [
+  "std",
+  "NSColor",
+  "NSResponder",
+  "NSView",
+  "NSWindow",
+  "objc2-quartz-core",
+] }
+objc2-quartz-core = { version = "0.3", default-features = false, features = ["std", "CALayer"] }
+
 [profile.release]
 codegen-units = 1
 lto = true

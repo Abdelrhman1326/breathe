@@ -80,7 +80,9 @@ reputation.
 
 ## Supported platforms
 
-Breathe supports Linux and Windows on x86_64. Linux tray icons and reminders
+Breathe supports Linux and Windows on x86_64. A macOS build (universal, macOS
+11+) is in preview: it is built only on public Apple APIs and checked in CI, but
+has not been run on a Mac yet; see [docs/MACOS.md](docs/MACOS.md). Linux tray icons and reminders
 depend on your desktop's tray host and notification service. Release packages
 were smoke-tested on Fedora 44, Ubuntu 24.04, and Debian 12. The Windows
 10 Pro x64 VM passed per-user installation, launch, Settings, and window-control

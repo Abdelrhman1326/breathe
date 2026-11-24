@@ -522,6 +522,18 @@ pub(crate) fn sync_tray(app: &AppHandle, snapshot: &Snapshot) {
             let _ = icon.set_tooltip(Some(tooltip));
         }
     }
+
+    // The always-visible menu bar countdown. Only macOS draws a tray title
+    // next to the icon; elsewhere the tooltip carries the time.
+    #[cfg(target_os = "macos")]
+    {
+        let title = crate::tray::menu_bar_title(snapshot, settings.language);
+        if handles.title_changed(&title) {
+            if let Some(icon) = app.tray_by_id(crate::tray::TRAY_ID) {
+                let _ = icon.set_title(title);
+            }
+        }
+    }
 }
 
 fn tooltip_for(snapshot: &Snapshot, language: Language) -> String {

@@ -35,8 +35,15 @@ pub const ENTRY_FILE_NAME: &str = "Breathe.desktop";
 const MECHANISM: &str = "XDG autostart";
 #[cfg(target_os = "windows")]
 const MECHANISM: &str = "Windows Run key";
-#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+#[cfg(target_os = "macos")]
+const MECHANISM: &str = "macOS LaunchAgent";
+#[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
 const MECHANISM: &str = "autostart";
+
+/// Where `tauri-plugin-autostart` (LaunchAgent mode, its default) writes the
+/// per-user agent on macOS. Named after the app name given to the plugin.
+#[cfg(target_os = "macos")]
+const MACOS_ENTRY: &str = "~/Library/LaunchAgents/Breathe.plist";
 
 /// Descriptive location shown in the UI on Windows. It is not a filesystem path.
 const WINDOWS_ENTRY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run\Breathe";
@@ -156,7 +163,13 @@ pub fn session_reads_startup_entry() -> bool {
     true
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+/// launchd loads per-user LaunchAgents at every login.
+#[cfg(target_os = "macos")]
+pub fn session_reads_startup_entry() -> bool {
+    true
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
 pub fn session_reads_startup_entry() -> bool {
     false
 }
@@ -209,7 +222,12 @@ fn display_entry() -> Option<String> {
     Some(WINDOWS_ENTRY.to_string())
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os = "macos")]
+fn display_entry() -> Option<String> {
+    Some(MACOS_ENTRY.to_string())
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
 fn display_entry() -> Option<String> {
     None
 }

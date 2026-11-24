@@ -84,6 +84,7 @@ pub const RUST_KEYS: &[&str] = &[
     "tooltip.awaiting",
     "tooltip.break",
     "tooltip.stopped",
+    "menubar.awaiting",
     "reminder.eyes.title",
     "reminder.eyes.body",
     "reminder.movement.title",

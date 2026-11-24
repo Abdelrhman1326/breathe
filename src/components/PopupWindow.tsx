@@ -37,13 +37,13 @@ export function PopupCard({ view, snoozeEnabled, actions }: PopupCardProps) {
   const KindIcon = copy.kind === "movement" ? MovementIcon : EyeIcon;
 
   return (
-    <div className="flex h-full w-full p-2">
+    <div className="popup-frame flex h-full w-full p-2">
       <section
         key={view.seq}
         role="status"
         aria-live="polite"
         aria-label={copy.title}
-        className="popup-enter relative flex min-w-0 flex-1 flex-col rounded-[18px] border border-line bg-app px-4 pb-3.5 pt-3.5 shadow-[0_10px_28px_-12px_rgb(var(--shadow)/0.45)]"
+        className="popup-card popup-enter relative flex min-w-0 flex-1 flex-col rounded-[18px] border border-line bg-app px-4 pb-3.5 pt-3.5 shadow-[0_10px_28px_-12px_rgb(var(--shadow)/0.45)]"
       >
         <div className="flex items-start gap-3">
           <div
@@ -136,6 +136,11 @@ export function PopupWindow({
 
   useEffect(() => {
     document.documentElement.dataset.window = "popup";
+    // macOS webviews cannot be transparent without private APIs, so there the
+    // window itself is rounded and shadowed and the card fills it.
+    if (/Macintosh|Mac OS X/.test(navigator.userAgent)) {
+      document.documentElement.dataset.platform = "mac";
+    }
     let active = true;
     const off = onPopup((next) => {
       if (active) setView(next);

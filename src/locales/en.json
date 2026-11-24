@@ -120,6 +120,7 @@
   "settings.startup.disabled": "Breathe will not start automatically.",
   "settings.startup.remove.title": "Removing autostart",
   "settings.startup.remove.windows": "Turn the switch off. This removes the per-user Run value from {path} and does not require administrator rights.",
+  "settings.startup.remove.macos": "Turn the switch off. This removes the per-user LaunchAgent {path}.",
   "settings.startup.remove.linux": "Turn the switch off, or delete the desktop entry directly:",
   "settings.startup.remove.niri": "If you instead added Breathe manually, remove the matching {line} line from {file}.",
   "settings.startup.remove.desktopOnly": "Startup integration is only available in the desktop app.",
@@ -147,6 +148,7 @@
   "tooltip.awaiting": "Breathe — time for a break",
   "tooltip.break": "Breathe — on a break, {time} left",
   "tooltip.stopped": "Breathe — stopped",
+  "menubar.awaiting": "Break",
   "window.settings": "Breathe Settings",
   "window.popup": "Breathe reminder"
 }

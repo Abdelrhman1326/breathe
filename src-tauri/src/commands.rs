@@ -7,6 +7,8 @@
 
 use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
+use crate::i18n;
+use crate::model::Language;
 use crate::model::{
     AppInfo, AutostartStatus, NotificationStatus, ReminderKind, ScheduleState, Settings,
     SettingsPatch, Snapshot, TestNotificationResult, EVENT_SETTINGS, EVENT_SNAPSHOT,
@@ -124,6 +126,12 @@ pub fn save_settings(app: AppHandle, patch: SettingsPatch) -> Result<Settings, S
         theme::apply(&app, next.theme);
     }
 
+    if patch.language_changed() {
+        // The webviews re-render from the settings event; the native window
+        // titles and the tray follow here (the tray on the next tick).
+        retitle_windows(&app, next.language);
+    }
+
     let _ = app.emit(EVENT_SETTINGS, next.clone());
     emit_snapshot(&app);
 
@@ -178,7 +186,8 @@ pub fn send_test_notification(
         };
     }
 
-    match notify::deliver(&app, resolved) {
+    let language = app.state::<AppState>().current_settings().language;
+    match notify::deliver(&app, language, resolved) {
         Ok(()) => TestNotificationResult {
             delivered: true,
             kind: resolved,
@@ -312,11 +321,13 @@ pub fn open_settings_window(app: &AppHandle) -> Result<(), String> {
         return Ok(());
     }
 
-    let preference = app.state::<AppState>().current_settings().theme;
+    let current = app.state::<AppState>().current_settings();
+    let preference = current.theme;
+    let preference_language = current.language;
 
     let window =
         WebviewWindowBuilder::new(app, SETTINGS_WINDOW, WebviewUrl::App("index.html".into()))
-            .title("Breathe Settings")
+            .title(i18n::text(preference_language, "window.settings"))
             // Fixed size: the dialog has one layout, and pinning min == max is what
             // makes tiling compositors (niri) float it instead of stretching it into a
             // column. The window is created hidden and shown below, because a size
@@ -341,6 +352,18 @@ pub fn open_settings_window(app: &AppHandle) -> Result<(), String> {
     let _ = window.set_focus();
 
     Ok(())
+}
+
+/// Native window titles (task switcher, taskbar) in the current language.
+fn retitle_windows(app: &AppHandle, language: Language) {
+    for (label, key) in [
+        (SETTINGS_WINDOW, "window.settings"),
+        (popup_window::POPUP_WINDOW, "window.popup"),
+    ] {
+        if let Some(window) = app.get_webview_window(label) {
+            let _ = window.set_title(&i18n::text(language, key));
+        }
+    }
 }
 
 /// Closing either window hides it; only Quit ends the process.
@@ -479,14 +502,20 @@ pub(crate) fn sync_tray(app: &AppHandle, snapshot: &Snapshot) {
         return;
     };
 
-    let tooltip = tooltip_for(snapshot);
+    let tooltip = tooltip_for(snapshot, settings.language);
     let state = snapshot.state;
     let snooze_enabled = settings.snooze_enabled;
     let reminders_enabled = settings.eyes_enabled || settings.movement_enabled;
 
     // Call this from the scheduler worker. Menu setters marshal to the UI
     // thread and wait, so nesting them inside run_on_main_thread deadlocks.
-    let tooltip_changed = handles.sync(state, snooze_enabled, reminders_enabled, &tooltip);
+    let tooltip_changed = handles.sync(
+        state,
+        snooze_enabled,
+        reminders_enabled,
+        &tooltip,
+        settings.language,
+    );
 
     if tooltip_changed {
         if let Some(icon) = app.tray_by_id(crate::tray::TRAY_ID) {
@@ -495,22 +524,22 @@ pub(crate) fn sync_tray(app: &AppHandle, snapshot: &Snapshot) {
     }
 }
 
-fn tooltip_for(snapshot: &Snapshot) -> String {
+fn tooltip_for(snapshot: &Snapshot, language: Language) -> String {
     let seconds = snapshot.remaining_ms.div_euclid(1000).max(0);
-    let minutes = seconds / 60;
-    let seconds = seconds % 60;
+    let time = format!("{:02}:{:02}", seconds / 60, seconds % 60);
+    let with_time = |key: &str| i18n::text_with(language, key, &[("time", &time)]);
 
     if snapshot.next_kind.is_none() && snapshot.state == ScheduleState::Running {
-        return "Breathe — reminders are turned off".to_string();
+        return i18n::text(language, "tooltip.off");
     }
 
     match snapshot.state {
-        ScheduleState::Running => format!("Breathe — next break in {minutes:02}:{seconds:02}"),
-        ScheduleState::Paused => format!("Breathe — paused at {minutes:02}:{seconds:02}"),
-        ScheduleState::Snoozed => format!("Breathe — snoozed, {minutes:02}:{seconds:02} left"),
-        ScheduleState::Awaiting => "Breathe — time for a break".to_string(),
-        ScheduleState::OnBreak => format!("Breathe — on a break, {minutes:02}:{seconds:02} left"),
-        ScheduleState::Stopped => "Breathe — stopped".to_string(),
+        ScheduleState::Running => with_time("tooltip.running"),
+        ScheduleState::Paused => with_time("tooltip.paused"),
+        ScheduleState::Snoozed => with_time("tooltip.snoozed"),
+        ScheduleState::Awaiting => i18n::text(language, "tooltip.awaiting"),
+        ScheduleState::OnBreak => with_time("tooltip.break"),
+        ScheduleState::Stopped => i18n::text(language, "tooltip.stopped"),
     }
 }
 
@@ -539,11 +568,14 @@ mod tests {
     #[test]
     fn tooltip_counts_down_while_running() {
         assert_eq!(
-            tooltip_for(&snapshot(
-                ScheduleState::Running,
-                32 * 60 * 1000 + 15 * 1000,
-                Some(ReminderKind::Eyes)
-            )),
+            tooltip_for(
+                &snapshot(
+                    ScheduleState::Running,
+                    32 * 60 * 1000 + 15 * 1000,
+                    Some(ReminderKind::Eyes)
+                ),
+                Language::En
+            ),
             "Breathe — next break in 32:15"
         );
     }
@@ -551,11 +583,14 @@ mod tests {
     #[test]
     fn tooltip_marks_a_paused_schedule() {
         assert_eq!(
-            tooltip_for(&snapshot(
-                ScheduleState::Paused,
-                15 * 60 * 1000,
-                Some(ReminderKind::Movement)
-            )),
+            tooltip_for(
+                &snapshot(
+                    ScheduleState::Paused,
+                    15 * 60 * 1000,
+                    Some(ReminderKind::Movement)
+                ),
+                Language::En
+            ),
             "Breathe — paused at 15:00"
         );
     }
@@ -563,11 +598,14 @@ mod tests {
     #[test]
     fn tooltip_reports_snoozing() {
         assert_eq!(
-            tooltip_for(&snapshot(
-                ScheduleState::Snoozed,
-                4 * 60 * 1000 + 30 * 1000,
-                Some(ReminderKind::Eyes)
-            )),
+            tooltip_for(
+                &snapshot(
+                    ScheduleState::Snoozed,
+                    4 * 60 * 1000 + 30 * 1000,
+                    Some(ReminderKind::Eyes)
+                ),
+                Language::En
+            ),
             "Breathe — snoozed, 04:30 left"
         );
     }
@@ -575,7 +613,10 @@ mod tests {
     #[test]
     fn tooltip_says_so_when_every_category_is_off() {
         assert_eq!(
-            tooltip_for(&snapshot(ScheduleState::Running, 60_000, None)),
+            tooltip_for(
+                &snapshot(ScheduleState::Running, 60_000, None),
+                Language::En
+            ),
             "Breathe — reminders are turned off"
         );
     }
@@ -583,11 +624,10 @@ mod tests {
     #[test]
     fn tooltip_never_shows_negative_time() {
         assert_eq!(
-            tooltip_for(&snapshot(
-                ScheduleState::Running,
-                -5000,
-                Some(ReminderKind::Eyes)
-            )),
+            tooltip_for(
+                &snapshot(ScheduleState::Running, -5000, Some(ReminderKind::Eyes)),
+                Language::En
+            ),
             "Breathe — next break in 00:00"
         );
     }

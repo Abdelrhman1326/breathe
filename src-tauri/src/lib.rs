@@ -11,6 +11,7 @@
 mod autostart;
 mod clock;
 mod commands;
+mod i18n;
 mod model;
 mod notify;
 mod popup;
@@ -159,7 +160,8 @@ fn spawn_worker(app: tauri::AppHandle, receiver: Receiver<()>) {
                         show_popup(&app, PopupContent::Reminder { reminder });
                         Ok(())
                     } else {
-                        notify::deliver(&app, reminder.kind)
+                        let language = app.state::<AppState>().current_settings().language;
+                        notify::deliver(&app, language, reminder.kind)
                     };
                     match delivered {
                         Ok(()) => eprintln!(
@@ -177,7 +179,10 @@ fn spawn_worker(app: tauri::AppHandle, receiver: Receiver<()>) {
                 Some(Event::BreakEnded { kind }) => {
                     if popup_window::available(&app) {
                         show_popup(&app, PopupContent::BreakOver { kind });
-                    } else if let Err(error) = notify::deliver_break_over(&app) {
+                    } else if let Err(error) = notify::deliver_break_over(
+                        &app,
+                        app.state::<AppState>().current_settings().language,
+                    ) {
                         eprintln!(
                             "[breathe] could not announce the end of the {kind:?} break: {error}"
                         );
@@ -249,11 +254,11 @@ pub fn run() {
 
             // Created hidden and reused. If it cannot be created, reminders
             // fall back to native notifications.
-            if let Err(error) = popup_window::create(&handle) {
+            if let Err(error) = popup_window::create(&handle, settings.language) {
                 eprintln!("[breathe] {error}; using native notifications instead");
             }
 
-            match tray::build(&handle) {
+            match tray::build(&handle, settings.language) {
                 Ok(handles) => app.state::<AppState>().install_tray(handles),
                 Err(error) => eprintln!(
                     "[breathe] system tray unavailable: {error}\n\

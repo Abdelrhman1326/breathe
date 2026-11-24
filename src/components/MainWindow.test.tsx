@@ -9,6 +9,7 @@ const settings: Settings = {
   movementEnabled: true,
   snoozeEnabled: true,
   soundEnabled: true,
+  language: "en",
   theme: "system",
   startWithSession: false,
   startRunning: true,
@@ -96,7 +97,7 @@ describe("<MainWindow />", () => {
     );
 
     expect(screen.getByText("04:30")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /Resume now reminders/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Resume reminders now/i }));
     expect(handlers.onResume).toHaveBeenCalledTimes(1);
   });
 

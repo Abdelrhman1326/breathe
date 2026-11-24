@@ -3,9 +3,11 @@ import { intervalLabel } from "@/lib/format";
 import {
   breakActionLabel,
   describeMainWindow,
+  primaryActionAriaLabel,
   primaryActionLabel,
   snoozeActionLabel,
 } from "@/lib/presentation";
+import { useT } from "@/i18n/I18nProvider";
 import { INTERVAL_OPTIONS, type Settings, type Snapshot } from "@/lib/types";
 import { CircularTimer } from "./CircularTimer";
 import { TitleBar } from "./TitleBar";
@@ -32,22 +34,24 @@ interface MainWindowProps {
 }
 
 export function MainWindow({ settings, snapshot, actions }: MainWindowProps) {
+  const t = useT();
   const copy = useMemo(
-    () => describeMainWindow(settings, snapshot),
-    [settings, snapshot],
+    () => describeMainWindow(settings, snapshot, t),
+    [settings, snapshot, t],
   );
 
   const intervalOptions = useMemo(
     () =>
       INTERVAL_OPTIONS.map((minutes) => ({
         value: String(minutes),
-        label: intervalLabel(minutes),
+        label: intervalLabel(minutes, t),
       })),
-    [],
+    [t],
   );
 
   const resuming = copy.phase === "paused" || copy.phase === "snoozed";
-  const primaryLabel = primaryActionLabel(copy.phase);
+  const primaryLabel = primaryActionLabel(copy.phase, t);
+  const primaryAria = primaryActionAriaLabel(copy.phase, t);
   const waiting = copy.phase === "awaiting" ? snapshot.pending : null;
   const offerSnooze = waiting !== null && settings.snoozeEnabled;
 
@@ -77,21 +81,21 @@ export function MainWindow({ settings, snapshot, actions }: MainWindowProps) {
           <PrimaryButton
             className="mt-4"
             onClick={() => actions.onTakeBreak(waiting.id)}
-            title={breakActionLabel()}
+            title={breakActionLabel(t)}
           >
             {waiting.kind === "movement" ? (
               <MovementIcon className="h-[16px] w-[16px]" />
             ) : (
               <EyeIcon className="h-[16px] w-[16px]" />
             )}
-            {breakActionLabel()}
+            {breakActionLabel(t)}
           </PrimaryButton>
         ) : (
           <PrimaryButton
             className="mt-4"
             onClick={resuming ? actions.onResume : actions.onPause}
-            title={`${primaryLabel} reminders`}
-            ariaLabel={`${primaryLabel} reminders`}
+            title={primaryAria}
+            ariaLabel={primaryAria}
             disabled={copy.phase === "disabled"}
           >
             {resuming ? (
@@ -109,21 +113,21 @@ export function MainWindow({ settings, snapshot, actions }: MainWindowProps) {
               className="flex-1"
               size="lg"
               onClick={() => actions.onSnooze(waiting.id)}
-              title={snoozeActionLabel()}
+              title={snoozeActionLabel(t)}
             >
               <ClockIcon className="h-[16px] w-[16px]" />
-              {snoozeActionLabel()}
+              {snoozeActionLabel(t)}
             </SecondaryButton>
           ) : (
             <SelectField
               className="flex-1"
-              label="Reminder interval"
+              label={t("interval.label")}
               value={String(snapshot.intervalMinutes)}
               options={intervalOptions}
               onChange={(value) => actions.onSetInterval(Number(value))}
             />
           )}
-          <IconButton label="Settings" onClick={actions.onOpenSettings}>
+          <IconButton label={t("action.settings")} onClick={actions.onOpenSettings}>
             <SettingsIcon className="h-[18px] w-[18px]" />
           </IconButton>
         </div>

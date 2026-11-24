@@ -17,20 +17,18 @@ use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Wry};
 
-use crate::model::ScheduleState;
+use crate::i18n;
+use crate::model::{Language, ScheduleState};
 
 pub const TRAY_ID: &str = "breathe-tray";
 
-/// Menu labels, kept in one place so `sync` and `build` cannot drift apart.
-const LABEL_PAUSE: &str = "Pause Reminders";
-const LABEL_RESUME: &str = "Resume Reminders";
-const LABEL_SNOOZE: &str = "Snooze for 10 minutes";
-const LABEL_BREAK: &str = "Take a 3-minute break";
-
 pub struct TrayHandles {
+    open: MenuItem<Wry>,
     pause: MenuItem<Wry>,
     take_break: MenuItem<Wry>,
     snooze: MenuItem<Wry>,
+    settings: MenuItem<Wry>,
+    quit: MenuItem<Wry>,
     /// Last applied labels, so the 500 ms worker tick only touches the menu when
     /// something actually changed.
     applied: Mutex<Applied>,
@@ -38,6 +36,8 @@ pub struct TrayHandles {
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 struct Applied {
+    /// `None` until the first sync, so the first one labels every item.
+    language: Option<Language>,
     pause_label: String,
     pause_enabled: bool,
     break_enabled: bool,
@@ -52,13 +52,15 @@ fn desired(
     snooze_enabled: bool,
     reminders_enabled: bool,
     tooltip: &str,
+    language: Language,
 ) -> Applied {
     let pauses = matches!(
         state,
         ScheduleState::Running | ScheduleState::Awaiting | ScheduleState::OnBreak
     );
     Applied {
-        pause_label: if pauses { LABEL_PAUSE } else { LABEL_RESUME }.to_string(),
+        language: Some(language),
+        pause_label: i18n::text(language, if pauses { "tray.pause" } else { "tray.resume" }),
         pause_enabled: reminders_enabled,
         break_enabled: state == ScheduleState::Awaiting,
         snooze_enabled: snooze_enabled
@@ -83,13 +85,26 @@ impl TrayHandles {
         snooze_enabled: bool,
         reminders_enabled: bool,
         tooltip: &str,
+        language: Language,
     ) -> bool {
-        let next = desired(state, snooze_enabled, reminders_enabled, tooltip);
+        let next = desired(state, snooze_enabled, reminders_enabled, tooltip, language);
 
         let mut applied = match self.applied.lock() {
             Ok(applied) => applied,
             Err(poisoned) => poisoned.into_inner(),
         };
+
+        if applied.language != next.language {
+            // The language changed: relabel the items whose text does not
+            // depend on the schedule. The pause label is handled below.
+            let _ = self.open.set_text(i18n::text(language, "tray.open"));
+            let _ = self.take_break.set_text(i18n::text(language, "tray.break"));
+            let _ = self.snooze.set_text(i18n::text(language, "tray.snooze"));
+            let _ = self
+                .settings
+                .set_text(i18n::text(language, "tray.settings"));
+            let _ = self.quit.set_text(i18n::text(language, "tray.quit"));
+        }
 
         if applied.pause_label != next.pause_label {
             let _ = self.pause.set_text(&next.pause_label);
@@ -110,13 +125,14 @@ impl TrayHandles {
     }
 }
 
-pub fn build(app: &AppHandle) -> tauri::Result<TrayHandles> {
-    let open = MenuItem::with_id(app, "open", "Open Breathe", true, None::<&str>)?;
-    let pause = MenuItem::with_id(app, "pause", LABEL_PAUSE, true, None::<&str>)?;
-    let take_break = MenuItem::with_id(app, "break", LABEL_BREAK, false, None::<&str>)?;
-    let snooze = MenuItem::with_id(app, "snooze", LABEL_SNOOZE, true, None::<&str>)?;
-    let settings = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+pub fn build(app: &AppHandle, language: Language) -> tauri::Result<TrayHandles> {
+    let label = |key: &str| i18n::text(language, key);
+    let open = MenuItem::with_id(app, "open", label("tray.open"), true, None::<&str>)?;
+    let pause = MenuItem::with_id(app, "pause", label("tray.pause"), true, None::<&str>)?;
+    let take_break = MenuItem::with_id(app, "break", label("tray.break"), false, None::<&str>)?;
+    let snooze = MenuItem::with_id(app, "snooze", label("tray.snooze"), true, None::<&str>)?;
+    let settings = MenuItem::with_id(app, "settings", label("tray.settings"), true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", label("tray.quit"), true, None::<&str>)?;
     let before_actions = PredefinedMenuItem::separator(app)?;
     let before_quit = PredefinedMenuItem::separator(app)?;
 
@@ -149,9 +165,12 @@ pub fn build(app: &AppHandle) -> tauri::Result<TrayHandles> {
     builder.build(app)?;
 
     Ok(TrayHandles {
+        open,
         pause,
         take_break,
         snooze,
+        settings,
+        quit,
         applied: Mutex::new(Applied::default()),
     })
 }
@@ -181,10 +200,10 @@ mod tests {
 
     #[test]
     fn a_waiting_reminder_offers_the_break_and_the_snooze() {
-        let menu = desired(ScheduleState::Awaiting, true, true, "");
+        let menu = desired(ScheduleState::Awaiting, true, true, "", Language::En);
         assert!(menu.break_enabled);
         assert!(menu.snooze_enabled);
-        assert_eq!(menu.pause_label, LABEL_PAUSE);
+        assert_eq!(menu.pause_label, "Pause Reminders");
     }
 
     #[test]
@@ -195,31 +214,34 @@ mod tests {
             ScheduleState::Snoozed,
             ScheduleState::OnBreak,
         ] {
-            assert!(!desired(state, true, true, "").break_enabled, "{state:?}");
+            assert!(
+                !desired(state, true, true, "", Language::En).break_enabled,
+                "{state:?}"
+            );
         }
     }
 
     #[test]
     fn snooze_follows_the_setting_and_the_state() {
-        assert!(!desired(ScheduleState::Awaiting, false, true, "").snooze_enabled);
-        assert!(!desired(ScheduleState::Paused, true, true, "").snooze_enabled);
-        assert!(!desired(ScheduleState::OnBreak, true, true, "").snooze_enabled);
-        assert!(desired(ScheduleState::Running, true, true, "").snooze_enabled);
+        assert!(!desired(ScheduleState::Awaiting, false, true, "", Language::En).snooze_enabled);
+        assert!(!desired(ScheduleState::Paused, true, true, "", Language::En).snooze_enabled);
+        assert!(!desired(ScheduleState::OnBreak, true, true, "", Language::En).snooze_enabled);
+        assert!(desired(ScheduleState::Running, true, true, "", Language::En).snooze_enabled);
     }
 
     #[test]
     fn paused_and_snoozed_schedules_offer_resume() {
         assert_eq!(
-            desired(ScheduleState::Paused, true, true, "").pause_label,
-            LABEL_RESUME
+            desired(ScheduleState::Paused, true, true, "", Language::En).pause_label,
+            "Resume Reminders"
         );
         assert_eq!(
-            desired(ScheduleState::Snoozed, true, true, "").pause_label,
-            LABEL_RESUME
+            desired(ScheduleState::Snoozed, true, true, "", Language::En).pause_label,
+            "Resume Reminders"
         );
         assert_eq!(
-            desired(ScheduleState::OnBreak, true, true, "").pause_label,
-            LABEL_PAUSE
+            desired(ScheduleState::OnBreak, true, true, "", Language::En).pause_label,
+            "Pause Reminders"
         );
     }
 }

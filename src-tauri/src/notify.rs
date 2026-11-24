@@ -13,7 +13,8 @@
 use tauri::AppHandle;
 use tauri_plugin_notification::NotificationExt;
 
-use crate::model::{NotificationStatus, ReminderKind};
+use crate::i18n;
+use crate::model::{Language, NotificationStatus, ReminderKind};
 
 /// Used as the Linux notification `app_icon` hint, matching `tauri.conf.json`.
 /// Windows toasts take their identity/icon from the installed shortcut instead,
@@ -21,26 +22,25 @@ use crate::model::{NotificationStatus, ReminderKind};
 #[cfg(target_os = "linux")]
 const APP_ICON: &str = "dev.breathe.app";
 
-/// The copy is intentionally short, calm and free of any call to action that
-/// assumes notification buttons or sounds are available.
-pub fn message_for(kind: ReminderKind) -> (&'static str, &'static str) {
-    match kind {
-        ReminderKind::Eyes => (
-            "Time to rest your eyes",
-            "Look away from the screen and focus on something in the distance for a little while.",
-        ),
-        ReminderKind::Movement => (
-            "Time to move a little",
-            "Stand up, stretch, and give your body a chance to move.",
-        ),
-    }
+/// The reminder copy, shared with the popup through the translation catalog.
+/// It is short, calm and free of any call to action that assumes notification
+/// buttons or sounds are available.
+pub fn message_for(language: Language, kind: ReminderKind) -> (String, String) {
+    let which = match kind {
+        ReminderKind::Eyes => "eyes",
+        ReminderKind::Movement => "movement",
+    };
+    (
+        i18n::text(language, &format!("reminder.{which}.title")),
+        i18n::text(language, &format!("reminder.{which}.body")),
+    )
 }
 
 /// Shown when the break the user chose is over and the next countdown starts.
-pub fn break_over_message() -> (&'static str, &'static str) {
+pub fn break_over_message(language: Language) -> (String, String) {
     (
-        "Break's over",
-        "Welcome back. Your next reminder countdown has started.",
+        i18n::text(language, "reminder.breakOver.title"),
+        i18n::text(language, "reminder.breakOver.body"),
     )
 }
 
@@ -57,15 +57,15 @@ pub fn is_available() -> bool {
 }
 
 /// Delivers one reminder. Never opens a window, never steals focus.
-pub fn deliver(app: &AppHandle, kind: ReminderKind) -> Result<(), String> {
-    let (title, body) = message_for(kind);
-    platform::deliver(app, title, body)
+pub fn deliver(app: &AppHandle, language: Language, kind: ReminderKind) -> Result<(), String> {
+    let (title, body) = message_for(language, kind);
+    platform::deliver(app, &title, &body)
 }
 
 /// Announces the end of a break. Never opens a window, never steals focus.
-pub fn deliver_break_over(app: &AppHandle) -> Result<(), String> {
-    let (title, body) = break_over_message();
-    platform::deliver(app, title, body)
+pub fn deliver_break_over(app: &AppHandle, language: Language) -> Result<(), String> {
+    let (title, body) = break_over_message(language);
+    platform::deliver(app, &title, &body)
 }
 
 /// The shared plugin path. The Linux pre-flight and fallback live in the
@@ -176,14 +176,14 @@ mod tests {
 
     #[test]
     fn eye_rest_copy_matches_the_agreed_wording() {
-        let (title, body) = message_for(ReminderKind::Eyes);
+        let (title, body) = message_for(Language::En, ReminderKind::Eyes);
         assert_eq!(title, "Time to rest your eyes");
         assert!(body.starts_with("Look away from the screen"));
     }
 
     #[test]
     fn movement_copy_matches_the_agreed_wording() {
-        let (title, body) = message_for(ReminderKind::Movement);
+        let (title, body) = message_for(Language::En, ReminderKind::Movement);
         assert_eq!(title, "Time to move a little");
         assert!(body.starts_with("Stand up, stretch"));
     }
@@ -191,13 +191,13 @@ mod tests {
     #[test]
     fn copy_stays_concise_enough_for_a_notification_bubble() {
         let messages = [
-            message_for(ReminderKind::Eyes),
-            message_for(ReminderKind::Movement),
-            break_over_message(),
+            message_for(Language::En, ReminderKind::Eyes),
+            message_for(Language::En, ReminderKind::Movement),
+            break_over_message(Language::En),
         ];
         for (title, body) in messages {
-            assert!(title.len() < 48, "title too long: {title}");
-            assert!(body.len() < 120, "body too long: {body}");
+            assert!(title.chars().count() < 48, "title too long: {title}");
+            assert!(body.chars().count() < 120, "body too long: {body}");
         }
     }
 

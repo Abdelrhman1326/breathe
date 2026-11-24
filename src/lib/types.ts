@@ -1,3 +1,5 @@
+import type { Language } from "./i18n";
+
 /**
  * Wire types shared with the Rust backend.
  *
@@ -8,6 +10,9 @@
 export type ReminderKind = "eyes" | "movement";
 
 export type ThemePreference = "system" | "light" | "dark";
+
+/** Interface language; mirrors `Language` in Rust. */
+export type { Language };
 
 /**
  * Mirrors `ScheduleState` in Rust. `quit` is only observable while shutting down.
@@ -44,6 +49,7 @@ export interface Settings {
   snoozeEnabled: boolean;
   /** Whether popups play a short chime. */
   soundEnabled: boolean;
+  language: Language;
   theme: ThemePreference;
   startWithSession: boolean;
   /** Whether scheduling should be active after the next launch. */

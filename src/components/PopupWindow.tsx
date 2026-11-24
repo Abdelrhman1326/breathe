@@ -7,6 +7,7 @@ import {
   snoozeActionLabel,
 } from "@/lib/presentation";
 import type { PopupView } from "@/lib/types";
+import { useT } from "@/i18n/I18nProvider";
 import { CloseIcon, ClockIcon, EyeIcon, MovementIcon } from "./icons";
 
 export interface PopupActions {
@@ -30,7 +31,8 @@ interface PopupCardProps {
  * mid-sentence either.
  */
 export function PopupCard({ view, snoozeEnabled, actions }: PopupCardProps) {
-  const copy = describePopup(view.content);
+  const t = useT();
+  const copy = describePopup(view.content, t);
   const reminder = view.content.type === "reminder" ? view.content.reminder : null;
   const KindIcon = copy.kind === "movement" ? MovementIcon : EyeIcon;
 
@@ -64,8 +66,8 @@ export function PopupCard({ view, snoozeEnabled, actions }: PopupCardProps) {
         <button
           type="button"
           onClick={() => actions.onDismiss(view.seq)}
-          aria-label="Hide this popup"
-          title="Hide"
+          aria-label={t("popup.hide")}
+          title={t("popup.hideShort")}
           className="absolute end-2.5 top-2.5 flex h-7 w-7 items-center justify-center rounded-full text-subtle transition-colors hover:bg-surface-hover hover:text-fg"
         >
           <CloseIcon className="h-[15px] w-[15px]" />
@@ -79,7 +81,7 @@ export function PopupCard({ view, snoozeEnabled, actions }: PopupCardProps) {
               className="flex h-9 flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-accent px-3 text-[13px] font-medium text-accent-fg transition-colors hover:bg-accent-hover"
             >
               <KindIcon className="h-[15px] w-[15px]" />
-              {breakActionLabel()}
+              {breakActionLabel(t)}
             </button>
             {snoozeEnabled ? (
               <button
@@ -88,7 +90,7 @@ export function PopupCard({ view, snoozeEnabled, actions }: PopupCardProps) {
                 className="flex h-9 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl border border-line bg-surface px-3 text-[13px] font-medium text-fg transition-colors hover:bg-surface-hover"
               >
                 <ClockIcon className="h-[15px] w-[15px]" />
-                {snoozeActionLabel()}
+                {snoozeActionLabel(t)}
               </button>
             ) : null}
           </div>

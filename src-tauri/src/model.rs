@@ -29,6 +29,15 @@ pub enum ThemePreference {
     Dark,
 }
 
+/// Interface language, chosen in Settings independently of the OS locale.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum Language {
+    #[default]
+    En,
+    Ar,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ReminderKind {
@@ -83,6 +92,7 @@ pub struct Settings {
     pub snooze_enabled: bool,
     /// Whether popups play a short chime.
     pub sound_enabled: bool,
+    pub language: Language,
     pub theme: ThemePreference,
     pub start_with_session: bool,
     /// Whether the schedule should be running the next time the app launches.
@@ -97,6 +107,7 @@ impl Default for Settings {
             movement_enabled: true,
             snooze_enabled: true,
             sound_enabled: true,
+            language: Language::En,
             theme: ThemePreference::System,
             start_with_session: false,
             start_running: true,
@@ -125,6 +136,7 @@ pub struct SettingsPatch {
     pub movement_enabled: Option<bool>,
     pub snooze_enabled: Option<bool>,
     pub sound_enabled: Option<bool>,
+    pub language: Option<Language>,
     pub theme: Option<ThemePreference>,
     pub start_with_session: Option<bool>,
     pub start_running: Option<bool>,
@@ -137,6 +149,10 @@ impl SettingsPatch {
 
     pub fn appearance_changed(&self) -> bool {
         self.theme.is_some()
+    }
+
+    pub fn language_changed(&self) -> bool {
+        self.language.is_some()
     }
 
     pub fn start_with_session(&self) -> Option<bool> {
@@ -164,6 +180,9 @@ impl SettingsPatch {
         }
         if let Some(value) = self.sound_enabled {
             base.sound_enabled = value;
+        }
+        if let Some(value) = self.language {
+            base.language = value;
         }
         if let Some(value) = self.theme {
             base.theme = value;
@@ -323,6 +342,16 @@ mod tests {
     }
 
     #[test]
+    fn language_defaults_to_english_and_rejects_unknown_values() {
+        assert_eq!(Settings::default().language, Language::En);
+        let arabic: SettingsPatch =
+            serde_json::from_str(r#"{"language":"ar"}"#).expect("deserialises");
+        assert_eq!(arabic.language, Some(Language::Ar));
+        assert!(arabic.language_changed());
+        assert!(serde_json::from_str::<SettingsPatch>(r#"{"language":"fr"}"#).is_err());
+    }
+
+    #[test]
     fn patch_rejects_an_unknown_theme() {
         let result = serde_json::from_str::<SettingsPatch>(r#"{"theme":"sepia"}"#);
         assert!(result.is_err());
@@ -364,6 +393,7 @@ mod tests {
             movement_enabled: true,
             snooze_enabled: false,
             sound_enabled: false,
+            language: Language::Ar,
             theme: ThemePreference::Dark,
             start_with_session: true,
             start_running: false,

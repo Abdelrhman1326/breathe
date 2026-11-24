@@ -20,6 +20,7 @@ use tauri::{
     WebviewWindowBuilder,
 };
 
+use crate::model::Language;
 use crate::popup::{PopupChange, PopupView};
 
 pub const POPUP_WINDOW: &str = "popup";
@@ -34,9 +35,9 @@ const EDGE_MARGIN: f64 = 16.0;
 
 /// Creates the hidden popup window. Must run on the main thread before the
 /// window is first shown (layer-shell can only be set up before that).
-pub fn create(app: &AppHandle) -> Result<(), String> {
+pub fn create(app: &AppHandle, language: Language) -> Result<(), String> {
     let window = WebviewWindowBuilder::new(app, POPUP_WINDOW, WebviewUrl::App("index.html".into()))
-        .title("Breathe reminder")
+        .title(crate::i18n::text(language, "window.popup"))
         .inner_size(POPUP_WIDTH, POPUP_HEIGHT)
         .min_inner_size(POPUP_WIDTH, POPUP_HEIGHT)
         .max_inner_size(POPUP_WIDTH, POPUP_HEIGHT)

@@ -73,3 +73,25 @@ describe("contextual phrases", () => {
     }
   });
 });
+
+describe("Arabic interface text", () => {
+  // WebKitGTK 2.54 (Linux) applies HarfBuzz's vertical mark offsets with the
+  // wrong sign, so harakat are drawn mirrored around their place (a kasra
+  // floats above the letter). Breathe's own interface Arabic is therefore
+  // unvocalised, as interface Arabic normally is; only the approved classical
+  // phrases keep their exact vocalisation and are typeset in Amiri, whose
+  // marks need almost no vertical offsets.
+  const HARAKAT = /[ً-ْٰ]/;
+
+  it("carries no harakat outside the classical phrases", () => {
+    const vocalised = Object.entries(ar)
+      .filter(([key, value]) => !key.startsWith("phrase.") && HARAKAT.test(value))
+      .map(([key]) => key);
+    expect(vocalised).toEqual([]);
+  });
+
+  it("keeps the phrases exactly as approved", () => {
+    expect(ar["phrase.pastTime"]).toBe("الاشتغالُ بفواتِ وقتٍ ماضٍ تضييعُ وقتٍ ثانٍ.");
+    expect(ar["phrase.notAnHour"]).toBe("إنّي لا يحلُّ لي أن أُضيِّعَ ساعةً من عمري.");
+  });
+});

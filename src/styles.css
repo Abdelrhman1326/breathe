@@ -57,15 +57,22 @@
   --shadow: 0 0 0;
 }
 
-/* Noto Sans Arabic (SIL OFL 1.1), bundled so Arabic renders the same on
+/* IBM Plex Sans Arabic (SIL OFL 1.1), bundled so Arabic renders the same on
    Linux, Windows and macOS. woff2 only: every Breathe webview supports it.
-   Used only in Arabic documents (see html[lang="ar"] below). */
+   Used only in Arabic documents (see html[lang="ar"] below).
+
+   Why not Noto Sans Arabic: WebKitGTK 2.54 (Skia) applies HarfBuzz's
+   vertical GPOS offsets with the wrong sign, so marks positioned below or
+   above a letter land mirrored. Noto builds every dotted letter from a
+   dotless body plus an offset dot mark, so on Linux final ي lost its dots
+   (لي read as لى). Plex has precomposed dotted letters: unvocalised text
+   needs no vertical offsets at all. Gecko and Blink were never affected. */
 @font-face {
   font-family: "Breathe Arabic";
   font-style: normal;
   font-weight: 400;
   font-display: swap;
-  src: url("../node_modules/@fontsource/noto-sans-arabic/files/noto-sans-arabic-arabic-400-normal.woff2")
+  src: url("../node_modules/@fontsource/ibm-plex-sans-arabic/files/ibm-plex-sans-arabic-arabic-400-normal.woff2")
     format("woff2");
 }
 
@@ -74,7 +81,7 @@
   font-style: normal;
   font-weight: 500;
   font-display: swap;
-  src: url("../node_modules/@fontsource/noto-sans-arabic/files/noto-sans-arabic-arabic-500-normal.woff2")
+  src: url("../node_modules/@fontsource/ibm-plex-sans-arabic/files/ibm-plex-sans-arabic-arabic-500-normal.woff2")
     format("woff2");
 }
 
@@ -83,27 +90,28 @@
   font-style: normal;
   font-weight: 600;
   font-display: swap;
-  src: url("../node_modules/@fontsource/noto-sans-arabic/files/noto-sans-arabic-arabic-600-normal.woff2")
+  src: url("../node_modules/@fontsource/ibm-plex-sans-arabic/files/ibm-plex-sans-arabic-arabic-600-normal.woff2")
     format("woff2");
 }
 
-/* Noto Naskh Arabic (SIL OFL 1.1) for the classical phrases: Naskh is the
-   face made for fully vocalised classical text. */
+/* Amiri (SIL OFL 1.1), a classical Naskh for the fully vocalised phrases.
+   Its marks are drawn in place and need almost no vertical GPOS offsets, so
+   the WebKitGTK sign bug above does not displace them. */
 @font-face {
   font-family: "Breathe Naskh";
   font-style: normal;
   font-weight: 400;
   font-display: swap;
-  src: url("../node_modules/@fontsource/noto-naskh-arabic/files/noto-naskh-arabic-arabic-400-normal.woff2")
+  src: url("../node_modules/@fontsource/amiri/files/amiri-arabic-400-normal.woff2")
     format("woff2");
 }
 
 @font-face {
   font-family: "Breathe Naskh";
   font-style: normal;
-  font-weight: 500;
+  font-weight: 700;
   font-display: swap;
-  src: url("../node_modules/@fontsource/noto-naskh-arabic/files/noto-naskh-arabic-arabic-500-normal.woff2")
+  src: url("../node_modules/@fontsource/amiri/files/amiri-arabic-700-normal.woff2")
     format("woff2");
 }
 

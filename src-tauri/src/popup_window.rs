@@ -78,12 +78,14 @@ pub fn apply(app: &AppHandle, change: PopupChange) {
             // Render first, show second, so the old content never flashes.
             let _ = app.emit_to(POPUP_WINDOW, EVENT_POPUP, Some(view));
             platform::place(app, &window);
-            if let Err(error) = window.show() {
+            if let Err(error) = platform::show(&window) {
                 eprintln!("[breathe] could not show the popup: {error}");
             }
         }
         PopupChange::Hide => {
-            let _ = window.hide();
+            if let Err(error) = platform::hide(&window) {
+                eprintln!("[breathe] could not hide the popup: {error}");
+            }
             let _ = app.emit_to(POPUP_WINDOW, EVENT_POPUP, None::<PopupView>);
         }
     }
@@ -174,22 +176,112 @@ mod platform {
         // Positioning is a no-op on Wayland toplevels; it matters on X11.
         super::place_in_corner(app, window, false);
     }
+
+    /// The window is non-focusable (`set_accept_focus(false)`), so a plain show
+    /// does not take focus.
+    pub fn show(window: &WebviewWindow) -> tauri::Result<()> {
+        window.show()
+    }
+
+    pub fn hide(window: &WebviewWindow) -> tauri::Result<()> {
+        window.hide()
+    }
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "windows")]
+mod platform {
+    use std::ffi::c_void;
+
+    use tauri::{AppHandle, WebviewWindow};
+
+    // Declared directly rather than through a crate: three stable user32 calls.
+    #[link(name = "user32")]
+    extern "system" {
+        fn ShowWindow(hwnd: *mut c_void, cmd: i32) -> i32;
+        fn SetWindowPos(
+            hwnd: *mut c_void,
+            insert_after: *mut c_void,
+            x: i32,
+            y: i32,
+            cx: i32,
+            cy: i32,
+            flags: u32,
+        ) -> i32;
+    }
+
+    const SW_HIDE: i32 = 0;
+    const SW_SHOWNOACTIVATE: i32 = 4;
+    const HWND_TOPMOST: isize = -1;
+    const SWP_NOSIZE: u32 = 0x0001;
+    const SWP_NOMOVE: u32 = 0x0002;
+    const SWP_NOACTIVATE: u32 = 0x0010;
+
+    pub fn prepare(window: &WebviewWindow) -> &'static str {
+        // tao creates the window with a caption and applies the undecorated
+        // style on its first visibility change. `show` below bypasses tao (to
+        // avoid activation), so force the final style now, while hidden, by
+        // toggling decorations; neither call shows or activates the window.
+        let _ = window.set_decorations(true);
+        let _ = window.set_decorations(false);
+        "positioned in the bottom-right corner"
+    }
+
+    pub fn place(app: &AppHandle, window: &WebviewWindow) {
+        super::place_in_corner(app, window, true);
+    }
+
+    /// tao's `show` uses `SW_SHOW`, which activates the window even with
+    /// `WS_EX_NOACTIVATE` and steals focus from whatever the user is typing
+    /// in. Show without activating and keep the popup topmost instead.
+    pub fn show(window: &WebviewWindow) -> tauri::Result<()> {
+        let hwnd: *mut c_void = window.hwnd()?.0;
+        // SAFETY: `hwnd` is the live top-level window owned by this process;
+        // both calls only change its visibility and z-order.
+        unsafe {
+            ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+            SetWindowPos(
+                hwnd,
+                HWND_TOPMOST as *mut c_void,
+                0,
+                0,
+                0,
+                0,
+                SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE,
+            );
+        }
+        Ok(())
+    }
+
+    /// Mirrors `show`: tao never saw the window become visible, so its own
+    /// `hide` would be a no-op.
+    pub fn hide(window: &WebviewWindow) -> tauri::Result<()> {
+        let hwnd: *mut c_void = window.hwnd()?.0;
+        // SAFETY: as in `show`.
+        unsafe {
+            ShowWindow(hwnd, SW_HIDE);
+        }
+        Ok(())
+    }
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
 mod platform {
     use tauri::{AppHandle, WebviewWindow};
 
     pub fn prepare(_window: &WebviewWindow) -> &'static str {
-        if cfg!(target_os = "windows") {
-            "positioned in the bottom-right corner"
-        } else {
-            "positioned in the top-right corner"
-        }
+        "positioned in the top-right corner"
     }
 
     pub fn place(app: &AppHandle, window: &WebviewWindow) {
-        super::place_in_corner(app, window, cfg!(target_os = "windows"));
+        super::place_in_corner(app, window, false);
+    }
+
+    pub fn show(window: &WebviewWindow) -> tauri::Result<()> {
+        window.show()
+    }
+
+    pub fn hide(window: &WebviewWindow) -> tauri::Result<()> {
+        window.hide()
     }
 }
 

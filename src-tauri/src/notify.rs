@@ -36,6 +36,14 @@ pub fn message_for(kind: ReminderKind) -> (&'static str, &'static str) {
     }
 }
 
+/// Shown when the break the user chose is over and the next countdown starts.
+pub fn break_over_message() -> (&'static str, &'static str) {
+    (
+        "Break's over",
+        "Welcome back. Your next reminder countdown has started.",
+    )
+}
+
 /// Asks the platform whether reminders can be shown right now.
 pub fn status() -> NotificationStatus {
     platform::status()
@@ -51,6 +59,12 @@ pub fn is_available() -> bool {
 /// Delivers one reminder. Never opens a window, never steals focus.
 pub fn deliver(app: &AppHandle, kind: ReminderKind) -> Result<(), String> {
     let (title, body) = message_for(kind);
+    platform::deliver(app, title, body)
+}
+
+/// Announces the end of a break. Never opens a window, never steals focus.
+pub fn deliver_break_over(app: &AppHandle) -> Result<(), String> {
+    let (title, body) = break_over_message();
     platform::deliver(app, title, body)
 }
 
@@ -176,8 +190,12 @@ mod tests {
 
     #[test]
     fn copy_stays_concise_enough_for_a_notification_bubble() {
-        for kind in [ReminderKind::Eyes, ReminderKind::Movement] {
-            let (title, body) = message_for(kind);
+        let messages = [
+            message_for(ReminderKind::Eyes),
+            message_for(ReminderKind::Movement),
+            break_over_message(),
+        ];
+        for (title, body) in messages {
             assert!(title.len() < 48, "title too long: {title}");
             assert!(body.len() < 120, "body too long: {body}");
         }

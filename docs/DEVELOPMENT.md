@@ -42,7 +42,7 @@ wrapping a Lucide component with `icon(...)` rather than drawing paths by hand.
 ## Scheduler policy
 
 The scheduler lives in `scheduler.rs` behind a small API (`tick`, `pause`,
-`resume`, `set_interval`, `snooze`, `set_running`, `stop`) and an injectable
+`resume`, `take_break`, `snooze`, `set_running`, `set_config`, `stop`) and an injectable
 `Clock` trait. `SystemClock` uses wall time for the deadline and
 `CLOCK_MONOTONIC` for liveness; tests use a manual clock.
 
@@ -50,33 +50,56 @@ States:
 
 | State | Meaning |
 | --- | --- |
-| `Running` | A deadline is set; the worker delivers when it passes. |
+| `Running` | A countdown deadline is set; when it passes a reminder becomes due. |
+| `Awaiting` | A reminder is due and waits for the user's choice. No clock runs. Serialized as `"awaiting"`. |
+| `OnBreak` | The user chose the 3-minute break. When it ends, a new countdown starts. Serialized as `"break"`. |
 | `Paused` | No deadline; `frozen` holds the remaining time. |
-| `Snoozed` | A single one-off reminder is scheduled `snooze` from now. |
+| `Snoozed` | A single one-off reminder is scheduled `snooze` (10 min) from now. |
 | `Stopped` | Only while the process is shutting down. Serialized as `"quit"`. |
+
+```text
+Running ──countdown ends──▶ Awaiting ──take_break──▶ OnBreak ──3 min──▶ Running
+                              │  ▲
+                       snooze │  │ 10 min, same category
+                              ▼  │
+                            Snoozed
+```
 
 Rules, all covered by tests:
 
 - **One deadline, one delivery.** The worker ticks every 500 ms but only fires
-  when `now >= deadline`, then immediately schedules the next full interval.
-  Re-renders and duplicate listeners cannot produce duplicate reminders.
+  when `now >= deadline`, and acting on a deadline always clears or replaces
+  it. Re-renders and duplicate listeners cannot produce duplicate reminders.
+- **No silent restart.** A countdown that ends moves to `Awaiting` and stays
+  there until the user takes the break or snoozes. Only the end of the break
+  starts the next countdown. `set_running(true)` is ignored while awaiting or
+  on a break.
+- **Idempotent choices.** Every due reminder has an id; `take_break(Some(id))`
+  and `snooze(Some(id))` only act on that waiting reminder. A double click, or
+  the main window and the tray racing, applies the first choice only.
 - **Pause** freezes the remaining time and clears the deadline, so nothing can
   be delivered while paused.
 - **Resume** continues from the frozen time; if it has already elapsed, it
   starts a full interval instead.
 - **Changing the interval** restarts the countdown from the new value. If the
   schedule was snoozed, the snooze is cancelled.
-- **Snooze** replaces the current deadline with `now + 5 min`; snoozing twice
-  re-arms one timer, never two.
-- **Alternation** is a counter, not random: with both categories on, reminders
-  alternate eye → movement → eye. With one category on, that category is always
-  used. With both off the schedule is inactive.
+- **Snooze** replaces the current deadline with `now + 10 min`; snoozing twice
+  re-arms one timer, never two. A snoozed reminder returns with the same
+  category.
+- **Pause** from `Awaiting` or `OnBreak` abandons the reminder or break;
+  resuming starts a fresh countdown.
+- **Alternation** follows the breaks actually taken: with both categories on,
+  reminders alternate eye → movement → eye. A snoozed or abandoned reminder is
+  not "used up". With one category on, that category is always used. With both
+  off the schedule keeps cycling without ever waiting.
 - **Hidden is not a state.** Hiding the window only sets
   `Snapshot::window_hidden`; scheduling is unaffected.
 - **Suspend/resume.** Each tick compares wall-clock advance with monotonic
-  advance. A divergence over 5 s means the machine slept. Missed reminders are
-  **dropped, never replayed**, and the next reminder is one full interval from
-  the resume. This also avoids a burst of notifications after a long sleep.
+  advance. A divergence over 5 s means the machine slept. A countdown, snooze or
+  break that ended during sleep is **dropped, never replayed**, and the next
+  reminder is one full interval from the resume. This also avoids a burst of
+  notifications or a stale prompt after a long sleep. A reminder that was
+  already waiting stays waiting.
 
 ## IPC surface
 
@@ -86,17 +109,51 @@ or D-Bus access (see `src-tauri/capabilities/default.json` — only
 
 `get_settings`, `get_snapshot`, `get_notification_status`, `get_autostart_status`,
 `get_app_info`, `save_settings`, `pause_reminders`, `resume_reminders`,
-`snooze_reminders`, `send_test_notification`, `set_autostart`, `hide_window`,
-`minimize_window`, `open_settings`, `quit_app`.
+`snooze_reminders` (optional `reminderId`), `take_break` (`reminderId`),
+`get_popup`, `dismiss_popup` (`seq`), `send_test_notification`,
+`set_autostart`, `hide_window`, `minimize_window`, `open_settings`, `quit_app`.
 
 `save_settings` validates every field (`SettingsPatch::apply`): the interval is
 clamped to 20–60 minutes, unknown themes are rejected, and the tray/theme/window
 side effects happen only after the store write succeeds.
 
-Rust pushes `breathe://snapshot` and `breathe://settings`; both windows listen,
-so they stay in sync without polling.
+Rust pushes `breathe://snapshot` and `breathe://settings`; every window
+listens, so they stay in sync without polling. `breathe://popup` goes to the
+popup window only.
 
-## Notifications
+## Reminder popup
+
+Reminders are shown in Breathe's own popup, not an OS notification card.
+
+- **Lifecycle (`popup.rs`)** is pure and unit-tested: at most one popup; the
+  same reminder is never shown twice; a reminder popup has no timer and hides
+  as soon as the reminder stops waiting (break, snooze, pause); the "break's
+  over" popup and the Settings preview hide after 8 s; dismissing (×) only
+  hides the popup and never answers the reminder; a stale `seq` is ignored.
+- **Window (`popup_window.rs`)**: one hidden, non-focusable, always-on-top,
+  transparent window (label `popup`) is created at startup and reused. If it
+  cannot be created, reminders fall back to native notifications (below).
+- **Placement** is per platform:
+  - Wayland: `libgtk-layer-shell.so.0` is loaded at runtime (≥ 0.7, not a
+    package dependency) and the window becomes an *overlay* layer surface
+    anchored top-right with no keyboard interactivity. Layer surfaces ignore
+    GTK geometry hints, so the size is set with `set_size_request`. Without the
+    library or the protocol (GNOME/Mutter) it stays an ordinary window that the
+    compositor places.
+  - X11: top-right of the work area of the monitor under the cursor.
+  - Windows: bottom-right of the work area (above the taskbar) of the monitor
+    under the cursor.
+- **Frontend (`PopupWindow.tsx`)** renders the current view, pulls it with
+  `get_popup` on load (so an event sent before the webview listened is not
+  lost) and plays the chime once per new `seq`.
+- **Sound (`src/lib/chime.ts`)**: a short chime synthesised with Web Audio, no
+  file and no native audio dependency. wry enables autoplay on all three
+  webviews, so the hidden popup can play it. `soundEnabled` turns it off.
+
+Preview the popup in a plain browser with
+`http://localhost:1420/?window=popup&popup=reminder` (or `breakOver`, `test`).
+
+## Native notifications (fallback)
 
 `notify.rs` is split by target platform. Both paths use
 `tauri-plugin-notification` for delivery.
@@ -223,6 +280,14 @@ busctl --user get-property org.kde.StatusNotifierWatcher /StatusNotifierWatcher 
 dbus-send --session --print-reply --dest=<bus> <item>/Menu \
   com.canonical.dbusmenu.GetLayout int32:0 int32:-1 array:string:
 # call AboutToShow first, then Event(id, "clicked", ...) to activate an item.
+```
+
+Debug builds read three optional overrides so the whole reminder cycle can be
+exercised in under a minute. They are compiled out of release builds:
+
+```sh
+BREATHE_DEV_INTERVAL_SECS=20 BREATHE_DEV_BREAK_SECS=10 BREATHE_DEV_SNOOZE_SECS=10 \
+  npm run tauri dev
 ```
 
 For visual states the frontend can be driven in a headless browser against the

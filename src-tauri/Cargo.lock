@@ -310,6 +310,8 @@ dependencies = [
 name = "breathe"
 version = "0.1.1"
 dependencies = [
+ "gtk",
+ "libloading",
  "notify-rust",
  "serde",
  "serde_json",

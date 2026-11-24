@@ -4,22 +4,41 @@
 //! counts down, it only renders snapshots pushed from here. That is what stops
 //! re-renders or duplicate listeners from producing duplicate notifications.
 //!
+//! Lifecycle:
+//!
+//! ```text
+//!   Running ──countdown ends──▶ Awaiting ──take_break──▶ OnBreak ──break ends──▶ Running
+//!      ▲                          │  ▲                                              (fresh
+//!      │                   snooze │  │ snooze ends                                 countdown)
+//!      │                          ▼  │
+//!      └──── resume "now" ────── Snoozed
+//! ```
+//!
 //! Design notes:
 //!
+//! * A countdown that ends never restarts on its own. The schedule waits in
+//!   `Awaiting` until the user takes a break or snoozes; only the end of the
+//!   break starts the next countdown.
+//! * Every due reminder gets an id. Choices name the id they answer, so a
+//!   double click, or the popup and tray racing each other, cannot apply twice.
 //! * The deadline is stored as a **wall-clock** `SystemTime`, so remaining time
 //!   is correct after the process is suspended or the machine sleeps.
 //! * A **suspend/resume** is detected by comparing the wall-clock delta against
 //!   the monotonic delta between two ticks. `CLOCK_MONOTONIC` does not advance
 //!   during suspend, so a large divergence means the machine slept.
-//! * Missed reminders are **never replayed**. After a long sleep the next
-//!   reminder is one full interval away, so a resume cannot produce a burst.
+//! * Missed deadlines are **never replayed**. A countdown, snooze or break that
+//!   ended while the machine slept is dropped and a fresh countdown starts, so a
+//!   resume cannot produce a burst or a stale popup.
 //! * Settings are persisted; the countdown is not. `start()` always schedules a
 //!   fresh interval, so a stale countdown can never be restored.
 
 use std::time::{Duration, SystemTime};
 
 use crate::clock::{add, to_epoch_ms, Clock};
-use crate::model::{ReminderKind, ScheduleState, Settings, Snapshot, DEFAULT_SNOOZE_MINUTES};
+use crate::model::{
+    PendingReminder, ReminderKind, ScheduleState, Settings, Snapshot, BREAK_MINUTES,
+    DEFAULT_SNOOZE_MINUTES,
+};
 
 /// How often the background worker calls [`Scheduler::tick`].
 pub const TICK_INTERVAL_MS: u64 = 500;
@@ -32,6 +51,7 @@ pub const SUSPEND_DETECTION_THRESHOLD: Duration = Duration::from_secs(5);
 pub struct SchedulerConfig {
     pub interval: Duration,
     pub snooze: Duration,
+    pub break_length: Duration,
     pub eyes_enabled: bool,
     pub movement_enabled: bool,
     pub snooze_enabled: bool,
@@ -45,34 +65,71 @@ impl SchedulerConfig {
 
 impl From<&Settings> for SchedulerConfig {
     fn from(settings: &Settings) -> Self {
-        Self {
+        let config = Self {
             interval: Duration::from_secs(u64::from(settings.interval_minutes) * 60),
             snooze: Duration::from_secs(u64::from(DEFAULT_SNOOZE_MINUTES) * 60),
+            break_length: Duration::from_secs(u64::from(BREAK_MINUTES) * 60),
             eyes_enabled: settings.eyes_enabled,
             movement_enabled: settings.movement_enabled,
             snooze_enabled: settings.snooze_enabled,
-        }
+        };
+        #[cfg(debug_assertions)]
+        let config = dev_overrides(config);
+        config
     }
 }
 
-/// A reminder that has just become due.
+/// Debug builds only: shortens the countdown, break and snooze for manual
+/// testing, e.g. `BREATHE_DEV_INTERVAL_SECS=20 npm run tauri dev`. Compiled
+/// out of release builds, so packaged apps can never pick these up.
+#[cfg(debug_assertions)]
+fn dev_overrides(mut config: SchedulerConfig) -> SchedulerConfig {
+    fn seconds(name: &str) -> Option<Duration> {
+        let value = std::env::var(name).ok()?.parse::<u64>().ok()?;
+        (value > 0).then(|| Duration::from_secs(value))
+    }
+    if let Some(value) = seconds("BREATHE_DEV_INTERVAL_SECS") {
+        config.interval = value;
+    }
+    if let Some(value) = seconds("BREATHE_DEV_BREAK_SECS") {
+        config.break_length = value;
+    }
+    if let Some(value) = seconds("BREATHE_DEV_SNOOZE_SECS") {
+        config.snooze = value;
+    }
+    config
+}
+
+/// Something the worker has to act on, returned by [`Scheduler::tick`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Due {
-    pub kind: ReminderKind,
-    /// True when this fired at the end of a snooze window.
-    pub snoozed: bool,
+pub enum Event {
+    /// A reminder is due. The schedule now waits for the user's choice.
+    ReminderDue {
+        reminder: PendingReminder,
+        /// True when this fired at the end of a snooze.
+        snoozed: bool,
+    },
+    /// The break the user chose has finished and a new countdown has started.
+    BreakEnded { kind: ReminderKind },
 }
 
 pub struct Scheduler<C: Clock> {
     clock: C,
     config: SchedulerConfig,
     state: ScheduleState,
-    /// Wall-clock deadline of the next reminder. `None` when paused/stopped.
+    /// Wall-clock end of the current countdown, snooze or break. `None` while
+    /// paused, stopped or awaiting a choice.
     deadline: Option<SystemTime>,
     /// Time left when the schedule was paused, restored on resume.
     frozen: Duration,
-    /// The category delivered most recently, used to alternate.
+    /// The category the user most recently took a break for, used to
+    /// alternate. A reminder that is snoozed or abandoned is not "used up", so
+    /// the same category comes back.
     last_kind: Option<ReminderKind>,
+    /// Set while `Awaiting` (the reminder to answer) and `OnBreak` (the
+    /// reminder being acted on). Cleared everywhere else.
+    pending: Option<PendingReminder>,
+    last_id: u64,
     last_mono: Duration,
     last_wall: SystemTime,
     missed: u32,
@@ -89,6 +146,8 @@ impl<C: Clock> Scheduler<C> {
             deadline: None,
             frozen: Duration::ZERO,
             last_kind: None,
+            pending: None,
+            last_id: 0,
             last_mono,
             last_wall,
             missed: 0,
@@ -103,7 +162,7 @@ impl<C: Clock> Scheduler<C> {
         self.config
     }
 
-    /// Number of reminders dropped because the machine was asleep across them.
+    /// Number of deadlines dropped because the machine was asleep across them.
     pub fn missed(&self) -> u32 {
         self.missed
     }
@@ -113,16 +172,24 @@ impl<C: Clock> Scheduler<C> {
     pub fn start(&mut self) {
         self.state = ScheduleState::Running;
         self.frozen = Duration::ZERO;
-        self.schedule_full_interval();
+        self.pending = None;
+        self.schedule(self.config.interval);
     }
 
+    /// Pauses from any active state. A countdown or snooze keeps its remaining
+    /// time; a waiting reminder or a break is abandoned, so resuming starts a
+    /// fresh countdown.
     pub fn pause(&mut self) {
-        if !matches!(self.state, ScheduleState::Running | ScheduleState::Snoozed) {
-            return;
-        }
-        self.frozen = self.remaining().unwrap_or(Duration::ZERO);
+        self.frozen = match self.state {
+            ScheduleState::Running | ScheduleState::Snoozed => {
+                self.remaining().unwrap_or(Duration::ZERO)
+            }
+            ScheduleState::Awaiting | ScheduleState::OnBreak => Duration::ZERO,
+            ScheduleState::Paused | ScheduleState::Stopped => return,
+        };
         self.state = ScheduleState::Paused;
         self.deadline = None;
+        self.pending = None;
     }
 
     /// Resumes from a pause. If time was already up, a fresh interval is used.
@@ -137,22 +204,53 @@ impl<C: Clock> Scheduler<C> {
         };
         self.state = ScheduleState::Running;
         self.frozen = Duration::ZERO;
-        self.deadline = Some(add(self.clock.wall(), remaining));
+        self.schedule(remaining);
     }
 
-    /// Defers the next reminder by the configured snooze window. Any pending
-    /// deadline is replaced, so repeated snoozes never stack up.
-    pub fn snooze(&mut self) -> Result<(), String> {
+    /// Takes the break for the waiting reminder. Returns false, changing
+    /// nothing, when no reminder is waiting or `expected` names a different one.
+    pub fn take_break(&mut self, expected: Option<u64>) -> bool {
+        let Some(reminder) = self.waiting_reminder(expected) else {
+            return false;
+        };
+        // The category is used up only now, so alternation follows the breaks
+        // the user actually took.
+        self.last_kind = Some(reminder.kind);
+        self.state = ScheduleState::OnBreak;
+        self.frozen = Duration::ZERO;
+        self.schedule(self.config.break_length);
+        true
+    }
+
+    /// Postpones the next reminder by the snooze window. Any pending deadline
+    /// is replaced, so repeated snoozes never stack up.
+    ///
+    /// With `expected`, only the named waiting reminder can be snoozed (the
+    /// popup's action). Without it (the tray), a countdown, a snooze or a
+    /// waiting reminder can be snoozed. Returns `Ok(false)` when there is
+    /// nothing to snooze, and an error when snoozing is not allowed at all.
+    pub fn snooze(&mut self, expected: Option<u64>) -> Result<bool, String> {
         if !self.config.reminders_enabled() {
             return Err("no reminder categories are enabled".to_string());
         }
         if !self.config.snooze_enabled {
             return Err("snoozing is turned off in settings".to_string());
         }
+        let allowed = match expected {
+            Some(_) => self.waiting_reminder(expected).is_some(),
+            None => matches!(
+                self.state,
+                ScheduleState::Running | ScheduleState::Snoozed | ScheduleState::Awaiting
+            ),
+        };
+        if !allowed {
+            return Ok(false);
+        }
         self.state = ScheduleState::Snoozed;
         self.frozen = Duration::ZERO;
-        self.deadline = Some(add(self.clock.wall(), self.config.snooze));
-        Ok(())
+        self.pending = None;
+        self.schedule(self.config.snooze);
+        Ok(true)
     }
 
     /// Terminal state reached while the application is shutting down.
@@ -160,16 +258,20 @@ impl<C: Clock> Scheduler<C> {
         self.state = ScheduleState::Stopped;
         self.deadline = None;
         self.frozen = Duration::ZERO;
+        self.pending = None;
     }
 
     /// Starts or pauses the schedule.
     ///
     /// Starting always hands back a full interval, and pausing from a stopped
     /// schedule is normalised to *paused* rather than *quit* — "quit" only ever
-    /// means the process is going away.
+    /// means the process is going away. Starting is ignored while a reminder
+    /// waits for a choice or a break is running: those end through the user's
+    /// choice or the break's own timer, never through a silent restart.
     pub fn set_running(&mut self, running: bool) {
         match (running, self.state) {
-            (true, ScheduleState::Running) | (false, ScheduleState::Paused) => {}
+            (true, ScheduleState::Running | ScheduleState::Awaiting | ScheduleState::OnBreak)
+            | (false, ScheduleState::Paused) => {}
             (true, ScheduleState::Paused) => self.resume(),
             (true, _) => self.start(),
             (false, _) => {
@@ -181,25 +283,28 @@ impl<C: Clock> Scheduler<C> {
         }
     }
 
-    /// Replaces the configuration. Changing the interval restarts the countdown
-    /// so the next deadline is predictable.
+    /// Replaces the configuration. Changing the interval restarts a running
+    /// countdown so the next deadline is predictable; a waiting reminder or a
+    /// break is left alone and the new interval applies to the next countdown.
     pub fn set_config(&mut self, config: SchedulerConfig) {
         let interval_changed = config.interval != self.config.interval;
         self.config = config;
+
+        if self.state == ScheduleState::Awaiting && !config.reminders_enabled() {
+            // Nothing to answer any more; carry on as an ordinary countdown.
+            self.start();
+            return;
+        }
 
         if !interval_changed {
             return;
         }
 
         match self.state {
-            ScheduleState::Running | ScheduleState::Snoozed => {
-                self.state = ScheduleState::Running;
-                self.frozen = Duration::ZERO;
-                self.schedule_full_interval();
-            }
+            ScheduleState::Running | ScheduleState::Snoozed => self.start(),
             // Keep the paused state but hand back a full interval on resume.
             ScheduleState::Paused => self.frozen = self.config.interval,
-            ScheduleState::Stopped => {}
+            ScheduleState::Awaiting | ScheduleState::OnBreak | ScheduleState::Stopped => {}
         }
     }
 
@@ -217,11 +322,12 @@ impl<C: Clock> Scheduler<C> {
         }
     }
 
-    /// Advances the schedule. Returns a reminder when one is due right now.
+    /// Advances the schedule. Returns an event when a reminder becomes due or
+    /// a break ends.
     ///
-    /// At most one `Due` is returned per deadline, because firing always
-    /// reschedules the next deadline.
-    pub fn tick(&mut self) -> Option<Due> {
+    /// At most one event is returned per deadline, because acting on a
+    /// deadline always clears or replaces it.
+    pub fn tick(&mut self) -> Option<Event> {
         let now_wall = self.clock.wall();
         let now_mono = self.clock.monotonic();
 
@@ -233,7 +339,10 @@ impl<C: Clock> Scheduler<C> {
         self.last_wall = now_wall;
         self.last_mono = now_mono;
 
-        if !matches!(self.state, ScheduleState::Running | ScheduleState::Snoozed) {
+        if !matches!(
+            self.state,
+            ScheduleState::Running | ScheduleState::Snoozed | ScheduleState::OnBreak
+        ) {
             return None;
         }
 
@@ -242,27 +351,40 @@ impl<C: Clock> Scheduler<C> {
             return None;
         }
 
-        let was_snoozed = self.state == ScheduleState::Snoozed;
-        self.state = ScheduleState::Running;
-
         if slept {
             // The deadline passed while the machine was asleep. Drop it rather
             // than replaying it, and give the user a full interval from now.
             self.missed = self.missed.saturating_add(1);
-            self.schedule_full_interval();
+            self.start();
             return None;
         }
 
-        let kind = self.next_kind();
-        if let Some(kind) = kind {
-            self.last_kind = Some(kind);
+        if self.state == ScheduleState::OnBreak {
+            let kind = self.pending.map(|reminder| reminder.kind);
+            self.start();
+            return kind.map(|kind| Event::BreakEnded { kind });
         }
-        self.schedule_full_interval();
 
-        kind.map(|kind| Due {
-            kind,
-            snoozed: was_snoozed,
-        })
+        let snoozed = self.state == ScheduleState::Snoozed;
+        match self.next_kind() {
+            Some(kind) => {
+                self.last_id = self.last_id.wrapping_add(1);
+                let reminder = PendingReminder {
+                    id: self.last_id,
+                    kind,
+                };
+                self.state = ScheduleState::Awaiting;
+                self.deadline = None;
+                self.pending = Some(reminder);
+                Some(Event::ReminderDue { reminder, snoozed })
+            }
+            // Every category is off: keep cycling so re-enabling one behaves
+            // predictably, but never wait on a reminder nobody asked for.
+            None => {
+                self.start();
+                None
+            }
+        }
     }
 
     /// Current view of the schedule for the UI.
@@ -278,8 +400,15 @@ impl<C: Clock> Scheduler<C> {
                 self.config.snooze,
                 self.deadline,
             ),
+            ScheduleState::OnBreak => (
+                self.remaining().unwrap_or(self.config.break_length),
+                self.config.break_length,
+                self.deadline,
+            ),
             ScheduleState::Paused => (self.frozen, self.config.interval, None),
-            ScheduleState::Stopped => (Duration::ZERO, self.config.interval, None),
+            ScheduleState::Awaiting | ScheduleState::Stopped => {
+                (Duration::ZERO, self.config.interval, None)
+            }
         };
 
         let fraction = if total.is_zero() {
@@ -294,15 +423,28 @@ impl<C: Clock> Scheduler<C> {
             interval_minutes: (self.config.interval.as_secs() / 60) as u32,
             remaining_ms: remaining.as_millis() as i64,
             remaining_fraction: fraction,
-            next_kind: self.next_kind(),
+            next_kind: match self.state {
+                ScheduleState::Awaiting => self.pending.map(|reminder| reminder.kind),
+                _ => self.next_kind(),
+            },
             next_at_ms: next_at.map(to_epoch_ms),
             snooze_remaining_ms: (self.state == ScheduleState::Snoozed)
                 .then_some(remaining.as_millis() as i64),
+            pending: self.pending,
         }
     }
 
-    fn schedule_full_interval(&mut self) {
-        self.deadline = Some(add(self.clock.wall(), self.config.interval));
+    /// The reminder waiting for a choice, if it matches `expected`.
+    fn waiting_reminder(&self, expected: Option<u64>) -> Option<PendingReminder> {
+        if self.state != ScheduleState::Awaiting {
+            return None;
+        }
+        self.pending
+            .filter(|reminder| expected.is_none_or(|id| id == reminder.id))
+    }
+
+    fn schedule(&mut self, length: Duration) {
+        self.deadline = Some(add(self.clock.wall(), length));
     }
 
     fn remaining(&self) -> Option<Duration> {
@@ -327,7 +469,8 @@ mod tests {
     fn config() -> SchedulerConfig {
         SchedulerConfig {
             interval: minutes(45),
-            snooze: minutes(5),
+            snooze: minutes(10),
+            break_length: minutes(3),
             eyes_enabled: true,
             movement_enabled: true,
             snooze_enabled: true,
@@ -340,12 +483,41 @@ mod tests {
         (clock, scheduler)
     }
 
+    /// Advances to the end of the current countdown and returns the reminder.
+    fn reach_reminder(clock: &TestClock, scheduler: &mut Scheduler<TestClock>) -> PendingReminder {
+        let remaining = Duration::from_millis(scheduler.snapshot(false).remaining_ms as u64);
+        clock.advance(remaining);
+        match scheduler.tick() {
+            Some(Event::ReminderDue { reminder, .. }) => reminder,
+            other => panic!("expected a due reminder, got {other:?}"),
+        }
+    }
+
+    /// Takes the break for `reminder` and lets it run out.
+    fn finish_break(
+        clock: &TestClock,
+        scheduler: &mut Scheduler<TestClock>,
+        reminder: PendingReminder,
+    ) {
+        assert!(scheduler.take_break(Some(reminder.id)));
+        clock.advance(minutes(3));
+        assert_eq!(
+            scheduler.tick(),
+            Some(Event::BreakEnded {
+                kind: reminder.kind
+            })
+        );
+    }
+
+    /* ------------------------------------------------------- countdown --- */
+
     #[test]
     fn a_fresh_scheduler_is_stopped_and_schedules_nothing() {
         let (_clock, scheduler) = setup();
         assert_eq!(scheduler.state(), ScheduleState::Stopped);
         assert_eq!(scheduler.snapshot(false).next_at_ms, None);
         assert_eq!(scheduler.snapshot(false).remaining_ms, 0);
+        assert_eq!(scheduler.snapshot(false).pending, None);
     }
 
     #[test]
@@ -375,37 +547,160 @@ mod tests {
         assert!((snapshot.remaining_fraction - 1.0 / 45.0).abs() < 1e-9);
     }
 
+    /* ---------------------------------------------- awaiting a choice --- */
+
     #[test]
-    fn a_reminder_fires_at_the_deadline_and_never_twice() {
+    fn a_due_reminder_waits_for_a_choice_instead_of_restarting() {
         let (clock, mut scheduler) = setup();
         scheduler.start();
         clock.advance(minutes(45));
 
-        assert_eq!(
-            scheduler.tick(),
-            Some(Due {
-                kind: ReminderKind::Eyes,
-                snoozed: false
-            })
-        );
+        let event = scheduler.tick().expect("a reminder is due");
+        let Event::ReminderDue { reminder, snoozed } = event else {
+            panic!("expected a reminder, got {event:?}");
+        };
+        assert_eq!(reminder.kind, ReminderKind::Eyes);
+        assert!(!snoozed);
 
-        // The deadline was replaced, so further ticks stay quiet.
-        for _ in 0..20 {
-            assert_eq!(scheduler.tick(), None);
-        }
-        assert_eq!(scheduler.snapshot(false).remaining_ms, 45 * 60 * 1000);
+        let snapshot = scheduler.snapshot(false);
+        assert_eq!(snapshot.state, ScheduleState::Awaiting);
+        assert_eq!(snapshot.pending, Some(reminder));
+        assert_eq!(snapshot.next_kind, Some(ReminderKind::Eyes));
+        assert_eq!(snapshot.next_at_ms, None, "no countdown runs while waiting");
+        assert_eq!(snapshot.remaining_ms, 0);
     }
 
     #[test]
-    fn categories_alternate_when_both_are_enabled() {
+    fn a_waiting_reminder_never_fires_twice_or_restarts_by_itself() {
+        let (clock, mut scheduler) = setup();
+        scheduler.start();
+        reach_reminder(&clock, &mut scheduler);
+
+        for _ in 0..20 {
+            clock.advance(minutes(30));
+            assert_eq!(scheduler.tick(), None);
+        }
+        assert_eq!(scheduler.state(), ScheduleState::Awaiting);
+    }
+
+    #[test]
+    fn each_due_reminder_gets_a_new_id() {
+        let (clock, mut scheduler) = setup();
+        scheduler.start();
+
+        let first = reach_reminder(&clock, &mut scheduler);
+        finish_break(&clock, &mut scheduler, first);
+        let second = reach_reminder(&clock, &mut scheduler);
+
+        assert_ne!(first.id, second.id);
+    }
+
+    /* ------------------------------------------------------------ break --- */
+
+    #[test]
+    fn taking_a_break_runs_three_minutes_then_starts_the_next_countdown() {
+        let (clock, mut scheduler) = setup();
+        scheduler.start();
+        let reminder = reach_reminder(&clock, &mut scheduler);
+
+        assert!(scheduler.take_break(Some(reminder.id)));
+        let on_break = scheduler.snapshot(false);
+        assert_eq!(on_break.state, ScheduleState::OnBreak);
+        assert_eq!(on_break.remaining_ms, 3 * 60 * 1000);
+        assert_eq!(on_break.remaining_fraction, 1.0);
+        assert_eq!(on_break.pending, Some(reminder));
+
+        clock.advance(minutes(2));
+        assert_eq!(scheduler.tick(), None);
+
+        clock.advance(minutes(1));
+        assert_eq!(
+            scheduler.tick(),
+            Some(Event::BreakEnded {
+                kind: ReminderKind::Eyes
+            })
+        );
+
+        let after = scheduler.snapshot(false);
+        assert_eq!(after.state, ScheduleState::Running);
+        assert_eq!(after.remaining_ms, 45 * 60 * 1000);
+        assert_eq!(after.pending, None);
+        assert_eq!(after.next_kind, Some(ReminderKind::Movement));
+        assert_eq!(
+            scheduler.tick(),
+            None,
+            "the end of a break is reported once"
+        );
+    }
+
+    #[test]
+    fn a_second_break_request_for_the_same_reminder_is_ignored() {
+        let (clock, mut scheduler) = setup();
+        scheduler.start();
+        let reminder = reach_reminder(&clock, &mut scheduler);
+
+        assert!(scheduler.take_break(Some(reminder.id)));
+        clock.advance(minutes(1));
+        assert!(!scheduler.take_break(Some(reminder.id)), "double click");
+        assert_eq!(
+            scheduler.snapshot(false).remaining_ms,
+            2 * 60 * 1000,
+            "the running break was not restarted"
+        );
+    }
+
+    #[test]
+    fn a_choice_for_a_stale_reminder_is_ignored() {
+        let (clock, mut scheduler) = setup();
+        scheduler.start();
+        let reminder = reach_reminder(&clock, &mut scheduler);
+
+        assert!(!scheduler.take_break(Some(reminder.id + 1)));
+        assert_eq!(scheduler.snooze(Some(reminder.id + 1)), Ok(false));
+        assert_eq!(scheduler.state(), ScheduleState::Awaiting);
+    }
+
+    #[test]
+    fn popup_and_tray_racing_apply_only_the_first_choice() {
+        let (clock, mut scheduler) = setup();
+        scheduler.start();
+        let reminder = reach_reminder(&clock, &mut scheduler);
+
+        // The popup takes the break, then the tray's snooze arrives for the
+        // same reminder.
+        assert!(scheduler.take_break(Some(reminder.id)));
+        assert_eq!(scheduler.snooze(Some(reminder.id)), Ok(false));
+        assert_eq!(scheduler.state(), ScheduleState::OnBreak);
+
+        // And the other way round.
+        clock.advance(minutes(3));
+        scheduler.tick();
+        let next = reach_reminder(&clock, &mut scheduler);
+        assert_eq!(scheduler.snooze(Some(next.id)), Ok(true));
+        assert!(!scheduler.take_break(Some(next.id)));
+        assert_eq!(scheduler.state(), ScheduleState::Snoozed);
+    }
+
+    #[test]
+    fn breaks_cannot_be_taken_without_a_waiting_reminder() {
+        let (_clock, mut scheduler) = setup();
+        assert!(!scheduler.take_break(None), "stopped");
+        scheduler.start();
+        assert!(!scheduler.take_break(None), "running");
+        scheduler.pause();
+        assert!(!scheduler.take_break(None), "paused");
+    }
+
+    #[test]
+    fn categories_alternate_with_the_breaks_taken() {
         let (clock, mut scheduler) = setup();
         scheduler.start();
 
         let mut delivered = Vec::new();
         for _ in 0..4 {
-            clock.advance(minutes(45));
-            let due = scheduler.tick().expect("a reminder is due");
-            delivered.push(due.kind);
+            let reminder = reach_reminder(&clock, &mut scheduler);
+            delivered.push(reminder.kind);
+            finish_break(&clock, &mut scheduler, reminder);
         }
 
         assert_eq!(
@@ -428,9 +723,9 @@ mod tests {
         scheduler.start();
 
         for _ in 0..3 {
-            clock.advance(minutes(45));
-            let due = scheduler.tick().expect("a reminder is due");
-            assert_eq!(due.kind, ReminderKind::Movement);
+            let reminder = reach_reminder(&clock, &mut scheduler);
+            assert_eq!(reminder.kind, ReminderKind::Movement);
+            finish_break(&clock, &mut scheduler, reminder);
         }
         assert_eq!(
             scheduler.snapshot(false).next_kind,
@@ -457,6 +752,104 @@ mod tests {
         assert_eq!(scheduler.state(), ScheduleState::Running);
         assert_eq!(scheduler.snapshot(false).remaining_ms, 45 * 60 * 1000);
     }
+
+    /* ----------------------------------------------------------- snooze --- */
+
+    #[test]
+    fn snoozing_a_waiting_reminder_brings_the_same_kind_back_in_ten_minutes() {
+        let (clock, mut scheduler) = setup();
+        scheduler.start();
+        let reminder = reach_reminder(&clock, &mut scheduler);
+
+        assert_eq!(scheduler.snooze(Some(reminder.id)), Ok(true));
+        let snoozed = scheduler.snapshot(false);
+        assert_eq!(snoozed.state, ScheduleState::Snoozed);
+        assert_eq!(snoozed.remaining_ms, 10 * 60 * 1000);
+        assert_eq!(snoozed.snooze_remaining_ms, Some(10 * 60 * 1000));
+        assert_eq!(snoozed.pending, None);
+
+        clock.advance(minutes(9));
+        assert_eq!(scheduler.tick(), None);
+
+        clock.advance(minutes(1));
+        let Some(Event::ReminderDue {
+            reminder: again,
+            snoozed,
+        }) = scheduler.tick()
+        else {
+            panic!("the snoozed reminder comes back");
+        };
+        assert!(snoozed);
+        assert_eq!(again.kind, reminder.kind, "same category, not the next one");
+        assert_ne!(again.id, reminder.id);
+        assert_eq!(scheduler.state(), ScheduleState::Awaiting);
+        assert_eq!(scheduler.tick(), None);
+    }
+
+    #[test]
+    fn snoozing_a_countdown_from_the_tray_postpones_the_reminder() {
+        let (clock, mut scheduler) = setup();
+        scheduler.start();
+        clock.advance(minutes(2));
+
+        assert_eq!(scheduler.snooze(None), Ok(true));
+        assert_eq!(scheduler.snapshot(false).remaining_ms, 10 * 60 * 1000);
+
+        clock.advance(minutes(10));
+        assert!(matches!(scheduler.tick(), Some(Event::ReminderDue { .. })));
+    }
+
+    #[test]
+    fn snoozing_twice_does_not_queue_two_reminders() {
+        let (clock, mut scheduler) = setup();
+        scheduler.start();
+
+        clock.advance(minutes(2));
+        assert_eq!(scheduler.snooze(None), Ok(true));
+        clock.advance(minutes(4));
+        assert_eq!(scheduler.snooze(None), Ok(true));
+
+        // The second snooze replaced the first deadline.
+        assert_eq!(scheduler.snapshot(false).remaining_ms, 10 * 60 * 1000);
+        clock.advance(minutes(8));
+        assert_eq!(scheduler.tick(), None);
+
+        clock.advance(minutes(2));
+        assert!(scheduler.tick().is_some());
+        assert_eq!(scheduler.tick(), None);
+    }
+
+    #[test]
+    fn snoozing_is_ignored_while_paused_or_on_a_break() {
+        let (clock, mut scheduler) = setup();
+        scheduler.start();
+        let reminder = reach_reminder(&clock, &mut scheduler);
+        scheduler.take_break(Some(reminder.id));
+        assert_eq!(scheduler.snooze(None), Ok(false));
+        assert_eq!(scheduler.state(), ScheduleState::OnBreak);
+
+        scheduler.pause();
+        assert_eq!(scheduler.snooze(None), Ok(false));
+        assert_eq!(scheduler.state(), ScheduleState::Paused);
+    }
+
+    #[test]
+    fn snoozing_is_refused_when_disabled_or_when_nothing_is_enabled() {
+        let (_clock, mut scheduler) = setup();
+        let mut no_snooze = config();
+        no_snooze.snooze_enabled = false;
+        scheduler.set_config(no_snooze);
+        scheduler.start();
+        assert!(scheduler.snooze(None).is_err());
+
+        let mut quiet = config();
+        quiet.eyes_enabled = false;
+        quiet.movement_enabled = false;
+        scheduler.set_config(quiet);
+        assert!(scheduler.snooze(None).is_err());
+    }
+
+    /* ---------------------------------------------------- pause/resume --- */
 
     #[test]
     fn pausing_freezes_the_countdown_and_suspends_delivery() {
@@ -488,13 +881,10 @@ mod tests {
         assert_eq!(scheduler.snapshot(false).remaining_ms, 15 * 60 * 1000);
 
         clock.advance(minutes(15));
-        assert_eq!(
+        assert!(matches!(
             scheduler.tick(),
-            Some(Due {
-                kind: ReminderKind::Eyes,
-                snoozed: false
-            })
-        );
+            Some(Event::ReminderDue { reminder, snoozed: false }) if reminder.kind == ReminderKind::Eyes
+        ));
     }
 
     #[test]
@@ -527,61 +917,78 @@ mod tests {
     }
 
     #[test]
-    fn snoozing_schedules_exactly_one_reminder_five_minutes_later() {
+    fn pausing_a_waiting_reminder_abandons_it_and_resume_starts_fresh() {
         let (clock, mut scheduler) = setup();
         scheduler.start();
-        scheduler.snooze().expect("snooze is allowed");
+        let reminder = reach_reminder(&clock, &mut scheduler);
 
-        let snoozed = scheduler.snapshot(false);
-        assert_eq!(snoozed.state, ScheduleState::Snoozed);
-        assert_eq!(snoozed.remaining_ms, 5 * 60 * 1000);
-        assert_eq!(snoozed.snooze_remaining_ms, Some(5 * 60 * 1000));
+        scheduler.pause();
+        let paused = scheduler.snapshot(false);
+        assert_eq!(paused.state, ScheduleState::Paused);
+        assert_eq!(paused.pending, None);
+        assert!(!scheduler.take_break(Some(reminder.id)));
 
-        clock.advance(minutes(5));
-        let due = scheduler.tick().expect("the snoozed reminder fires");
-        assert!(due.snoozed);
-        assert_eq!(due.kind, ReminderKind::Eyes);
+        scheduler.resume();
+        let resumed = scheduler.snapshot(false);
+        assert_eq!(resumed.state, ScheduleState::Running);
+        assert_eq!(resumed.remaining_ms, 45 * 60 * 1000);
+        assert_eq!(
+            resumed.next_kind,
+            Some(ReminderKind::Eyes),
+            "an abandoned reminder is not used up"
+        );
+    }
 
-        assert_eq!(scheduler.tick(), None);
-        assert_eq!(scheduler.state(), ScheduleState::Running);
+    #[test]
+    fn pausing_a_break_abandons_it_and_resume_starts_fresh() {
+        let (clock, mut scheduler) = setup();
+        scheduler.start();
+        let reminder = reach_reminder(&clock, &mut scheduler);
+        scheduler.take_break(Some(reminder.id));
+        clock.advance(minutes(1));
+
+        scheduler.pause();
+        assert_eq!(scheduler.snapshot(false).pending, None);
+        clock.advance(minutes(10));
+        assert_eq!(
+            scheduler.tick(),
+            None,
+            "a paused break never reports its end"
+        );
+
+        scheduler.resume();
         assert_eq!(scheduler.snapshot(false).remaining_ms, 45 * 60 * 1000);
     }
 
     #[test]
-    fn snoozing_twice_does_not_queue_two_reminders() {
+    fn starting_never_skips_a_waiting_reminder_or_a_running_break() {
         let (clock, mut scheduler) = setup();
         scheduler.start();
+        let reminder = reach_reminder(&clock, &mut scheduler);
 
-        clock.advance(minutes(2));
-        scheduler.snooze().expect("snooze is allowed");
-        clock.advance(minutes(4));
-        scheduler.snooze().expect("snooze is allowed");
+        scheduler.set_running(true);
+        assert_eq!(scheduler.state(), ScheduleState::Awaiting);
 
-        // The second snooze replaced the first deadline.
-        assert_eq!(scheduler.snapshot(false).remaining_ms, 5 * 60 * 1000);
-        clock.advance(minutes(3));
-        assert_eq!(scheduler.tick(), None);
-
-        clock.advance(minutes(2));
-        assert!(scheduler.tick().is_some());
-        assert_eq!(scheduler.tick(), None);
+        scheduler.take_break(Some(reminder.id));
+        clock.advance(minutes(1));
+        scheduler.set_running(true);
+        assert_eq!(scheduler.state(), ScheduleState::OnBreak);
+        assert_eq!(scheduler.snapshot(false).remaining_ms, 2 * 60 * 1000);
     }
 
     #[test]
-    fn snoozing_is_refused_when_disabled_or_when_nothing_is_enabled() {
+    fn resume_now_from_a_snooze_starts_a_full_countdown() {
         let (_clock, mut scheduler) = setup();
-        let mut no_snooze = config();
-        no_snooze.snooze_enabled = false;
-        scheduler.set_config(no_snooze);
         scheduler.start();
-        assert!(scheduler.snooze().is_err());
+        scheduler.snooze(None).expect("allowed");
 
-        let mut quiet = config();
-        quiet.eyes_enabled = false;
-        quiet.movement_enabled = false;
-        scheduler.set_config(quiet);
-        assert!(scheduler.snooze().is_err());
+        scheduler.set_running(true);
+        let snapshot = scheduler.snapshot(false);
+        assert_eq!(snapshot.state, ScheduleState::Running);
+        assert_eq!(snapshot.remaining_ms, 45 * 60 * 1000);
     }
+
+    /* ----------------------------------------------------------- config --- */
 
     #[test]
     fn changing_the_interval_while_running_restarts_the_countdown() {
@@ -606,7 +1013,7 @@ mod tests {
     fn changing_the_interval_while_snoozed_cancels_the_snooze() {
         let (_clock, mut scheduler) = setup();
         scheduler.start();
-        scheduler.snooze().expect("snooze is allowed");
+        scheduler.snooze(None).expect("snooze is allowed");
 
         let mut config = config();
         config.interval = minutes(60);
@@ -635,6 +1042,50 @@ mod tests {
     }
 
     #[test]
+    fn changing_the_interval_leaves_a_waiting_reminder_and_a_break_alone() {
+        let (clock, mut scheduler) = setup();
+        scheduler.start();
+        let reminder = reach_reminder(&clock, &mut scheduler);
+
+        let mut shorter = config();
+        shorter.interval = minutes(20);
+        scheduler.set_config(shorter);
+        assert_eq!(scheduler.state(), ScheduleState::Awaiting);
+        assert_eq!(scheduler.snapshot(false).pending, Some(reminder));
+
+        scheduler.take_break(Some(reminder.id));
+        let mut longer = config();
+        longer.interval = minutes(60);
+        scheduler.set_config(longer);
+        assert_eq!(scheduler.state(), ScheduleState::OnBreak);
+        assert_eq!(scheduler.snapshot(false).remaining_ms, 3 * 60 * 1000);
+
+        clock.advance(minutes(3));
+        scheduler.tick();
+        assert_eq!(
+            scheduler.snapshot(false).remaining_ms,
+            60 * 60 * 1000,
+            "the new interval applies to the next countdown"
+        );
+    }
+
+    #[test]
+    fn turning_every_category_off_releases_a_waiting_reminder() {
+        let (clock, mut scheduler) = setup();
+        scheduler.start();
+        reach_reminder(&clock, &mut scheduler);
+
+        let mut quiet = config();
+        quiet.eyes_enabled = false;
+        quiet.movement_enabled = false;
+        scheduler.set_config(quiet);
+
+        let snapshot = scheduler.snapshot(false);
+        assert_eq!(snapshot.state, ScheduleState::Running);
+        assert_eq!(snapshot.pending, None);
+    }
+
+    #[test]
     fn toggling_snooze_or_categories_does_not_move_the_deadline() {
         let (clock, mut scheduler) = setup();
         scheduler.start();
@@ -649,6 +1100,8 @@ mod tests {
         assert_eq!(scheduler.snapshot(false).next_at_ms, before);
         assert_eq!(scheduler.snapshot(false).remaining_ms, 35 * 60 * 1000);
     }
+
+    /* ---------------------------------------------------- sleep/resume --- */
 
     #[test]
     fn a_suspend_across_the_deadline_drops_it_instead_of_bursting() {
@@ -708,6 +1161,46 @@ mod tests {
     }
 
     #[test]
+    fn a_snooze_that_ends_during_sleep_starts_a_fresh_countdown() {
+        let (clock, mut scheduler) = setup();
+        scheduler.start();
+        scheduler.snooze(None).expect("allowed");
+
+        clock.advance_wall_only(minutes(60));
+        assert_eq!(scheduler.tick(), None, "no stale popup after waking");
+        assert_eq!(scheduler.state(), ScheduleState::Running);
+        assert_eq!(scheduler.snapshot(false).remaining_ms, 45 * 60 * 1000);
+    }
+
+    #[test]
+    fn a_break_that_ends_during_sleep_starts_the_countdown_silently() {
+        let (clock, mut scheduler) = setup();
+        scheduler.start();
+        let reminder = reach_reminder(&clock, &mut scheduler);
+        scheduler.take_break(Some(reminder.id));
+
+        clock.advance_wall_only(minutes(30));
+        assert_eq!(scheduler.tick(), None);
+        let snapshot = scheduler.snapshot(false);
+        assert_eq!(snapshot.state, ScheduleState::Running);
+        assert_eq!(snapshot.remaining_ms, 45 * 60 * 1000);
+        assert_eq!(snapshot.next_kind, Some(ReminderKind::Movement));
+    }
+
+    #[test]
+    fn a_waiting_reminder_survives_sleep() {
+        let (clock, mut scheduler) = setup();
+        scheduler.start();
+        let reminder = reach_reminder(&clock, &mut scheduler);
+
+        clock.advance_wall_only(minutes(120));
+        assert_eq!(scheduler.tick(), None);
+        assert_eq!(scheduler.snapshot(false).pending, Some(reminder));
+    }
+
+    /* ------------------------------------------------------------ misc --- */
+
+    #[test]
     fn stopped_schedules_never_fire() {
         let (clock, mut scheduler) = setup();
         scheduler.start();
@@ -763,7 +1256,8 @@ mod tests {
         let config = SchedulerConfig::from(&settings);
 
         assert_eq!(config.interval, minutes(30));
-        assert_eq!(config.snooze, minutes(u64::from(DEFAULT_SNOOZE_MINUTES)));
+        assert_eq!(config.snooze, minutes(10));
+        assert_eq!(config.break_length, minutes(3));
         assert!(config.reminders_enabled());
         assert!(!config.snooze_enabled);
     }

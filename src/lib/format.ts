@@ -45,6 +45,10 @@ export function scheduleLabel(state: ScheduleState): string {
       return "Paused";
     case "snoozed":
       return "Snoozed";
+    case "awaiting":
+      return "Waiting for you";
+    case "break":
+      return "On a break";
     case "quit":
       return "Quit";
   }

@@ -8,7 +8,9 @@ use serde::{Deserialize, Serialize};
 /// The intervals the UI offers, in minutes.
 pub const INTERVAL_CHOICES: [u32; 4] = [20, 30, 45, 60];
 pub const DEFAULT_INTERVAL_MINUTES: u32 = 45;
-pub const DEFAULT_SNOOZE_MINUTES: u32 = 5;
+pub const DEFAULT_SNOOZE_MINUTES: u32 = 10;
+/// Length of the break the user can take when a reminder is due.
+pub const BREAK_MINUTES: u32 = 3;
 
 /// Events pushed from Rust to the webviews.
 pub const EVENT_SNAPSHOT: &str = "breathe://snapshot";
@@ -40,14 +42,32 @@ pub enum ReminderKind {
 /// schedule (a hidden app keeps counting down and still delivers), so it travels
 /// as [`Snapshot::window_hidden`] instead. `Stopped` is what the UI calls the
 /// Quit state — it is only reached while the process is shutting down.
+///
+/// After a countdown ends the schedule is `Awaiting` the user's choice: no
+/// clock runs until they take a break (`OnBreak`) or snooze (`Snoozed`). A new
+/// countdown is never started silently.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ScheduleState {
     Running,
     Paused,
     Snoozed,
+    /// A reminder is due and is waiting for the user to choose.
+    Awaiting,
+    /// The user is taking the break they chose.
+    #[serde(rename = "break")]
+    OnBreak,
     #[serde(rename = "quit")]
     Stopped,
+}
+
+/// A reminder that is due. The id makes a choice idempotent: acting on a
+/// reminder that is no longer waiting is ignored instead of applied twice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingReminder {
+    pub id: u64,
+    pub kind: ReminderKind,
 }
 
 /* -------------------------------------------------------------------------- */
@@ -61,6 +81,8 @@ pub struct Settings {
     pub eyes_enabled: bool,
     pub movement_enabled: bool,
     pub snooze_enabled: bool,
+    /// Whether popups play a short chime.
+    pub sound_enabled: bool,
     pub theme: ThemePreference,
     pub start_with_session: bool,
     /// Whether the schedule should be running the next time the app launches.
@@ -74,6 +96,7 @@ impl Default for Settings {
             eyes_enabled: true,
             movement_enabled: true,
             snooze_enabled: true,
+            sound_enabled: true,
             theme: ThemePreference::System,
             start_with_session: false,
             start_running: true,
@@ -101,6 +124,7 @@ pub struct SettingsPatch {
     pub eyes_enabled: Option<bool>,
     pub movement_enabled: Option<bool>,
     pub snooze_enabled: Option<bool>,
+    pub sound_enabled: Option<bool>,
     pub theme: Option<ThemePreference>,
     pub start_with_session: Option<bool>,
     pub start_running: Option<bool>,
@@ -138,6 +162,9 @@ impl SettingsPatch {
         if let Some(value) = self.snooze_enabled {
             base.snooze_enabled = value;
         }
+        if let Some(value) = self.sound_enabled {
+            base.sound_enabled = value;
+        }
         if let Some(value) = self.theme {
             base.theme = value;
         }
@@ -169,6 +196,8 @@ pub struct Snapshot {
     /// Unix epoch milliseconds of the next reminder, or null when nothing is scheduled.
     pub next_at_ms: Option<i64>,
     pub snooze_remaining_ms: Option<i64>,
+    /// The reminder waiting for a choice (`awaiting`) or being acted on (`break`).
+    pub pending: Option<PendingReminder>,
 }
 
 /* -------------------------------------------------------------------------- */
@@ -239,6 +268,7 @@ mod tests {
     #[test]
     fn defaults_match_the_product_spec() {
         let settings = Settings::default();
+        assert!(settings.sound_enabled);
         assert_eq!(settings.interval_minutes, 45);
         assert!(settings.eyes_enabled);
         assert!(settings.movement_enabled);
@@ -333,6 +363,7 @@ mod tests {
             eyes_enabled: false,
             movement_enabled: true,
             snooze_enabled: false,
+            sound_enabled: false,
             theme: ThemePreference::Dark,
             start_with_session: true,
             start_running: false,
@@ -340,6 +371,23 @@ mod tests {
         let encoded = serde_json::to_string(&settings).expect("serialises");
         let decoded: Settings = serde_json::from_str(&encoded).expect("deserialises");
         assert_eq!(settings, decoded);
+    }
+
+    #[test]
+    fn new_states_use_the_wire_names_the_frontend_expects() {
+        let awaiting = serde_json::to_string(&ScheduleState::Awaiting).expect("serialises");
+        let on_break = serde_json::to_string(&ScheduleState::OnBreak).expect("serialises");
+        assert_eq!(awaiting, "\"awaiting\"");
+        assert_eq!(on_break, "\"break\"");
+
+        let reminder = PendingReminder {
+            id: 7,
+            kind: ReminderKind::Movement,
+        };
+        assert_eq!(
+            serde_json::to_string(&reminder).expect("serialises"),
+            r#"{"id":7,"kind":"movement"}"#
+        );
     }
 
     #[test]

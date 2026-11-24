@@ -124,6 +124,7 @@
   "settings.startup.disabled": "لن يبدأ Breathe تلقائيًا.",
   "settings.startup.remove.title": "إزالة التشغيل التلقائي",
   "settings.startup.remove.windows": "أوقِف المفتاح. يُزيل ذلك قيمة التشغيل الخاصة بالمستخدم من {path}، ولا يتطلب صلاحيات المسؤول.",
+  "settings.startup.remove.macos": "أوقِف المفتاح. يُزيل ذلك وكيل التشغيل الخاص بالمستخدم {path}.",
   "settings.startup.remove.linux": "أوقِف المفتاح، أو احذف مُدخل سطح المكتب مباشرةً:",
   "settings.startup.remove.niri": "وإن كنتَ أضفتَ Breathe يدويًا، فاحذف سطر {line} المطابق من {file}.",
   "settings.startup.remove.desktopOnly": "التشغيل التلقائي متاحٌ في تطبيق سطح المكتب فقط.",

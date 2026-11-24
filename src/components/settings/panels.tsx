@@ -456,6 +456,7 @@ export function StartupPanel({
   const enabled = autostartStatus?.enabled ?? settings.startWithSession;
   const windowsStartup = autostartStatus?.mechanism === "Windows Run key";
   const linuxStartup = autostartStatus?.mechanism === "XDG autostart";
+  const macStartup = autostartStatus?.mechanism === "macOS LaunchAgent";
 
   return (
     <>
@@ -517,6 +518,13 @@ export function StartupPanel({
               parts={{
                 path: <Mono>HKCU\Software\Microsoft\Windows\CurrentVersion\Run</Mono>,
               }}
+            />
+          </p>
+        ) : macStartup ? (
+          <p className="mt-1.5 text-[12.5px] leading-relaxed text-muted">
+            <Rich
+              text={t("settings.startup.remove.macos")}
+              parts={{ path: <Mono>~/Library/LaunchAgents/Breathe.plist</Mono> }}
             />
           </p>
         ) : linuxStartup ? (

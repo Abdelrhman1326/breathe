@@ -54,3 +54,22 @@ describe("Arabic", () => {
     expect(t.dir).toBe("rtl");
   });
 });
+
+describe("contextual phrases", () => {
+  // Names of narrators, speakers and books. The interface shows phrases only;
+  // attribution lives in content/phrases.sources.json, never in a catalog.
+  const ATTRIBUTION = [
+    "البخاري", "مسلم", "رواه", "حديث", "القشيري", "ابن عقيل", "ابن الجوزي", "ابن رجب",
+    "سلمان", "حنظلة", "Bukhari", "Muslim", "Qushayri", "Ibn ", "hadith", "narrated",
+  ];
+
+  it("never carries attribution in any catalog", () => {
+    for (const catalog of [en, ar]) {
+      for (const [key, value] of Object.entries(catalog)) {
+        for (const name of ATTRIBUTION) {
+          expect(value.includes(name), `${key} mentions ${name}`).toBe(false);
+        }
+      }
+    }
+  });
+});

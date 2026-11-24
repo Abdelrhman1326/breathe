@@ -7,7 +7,7 @@ import {
   type Snapshot,
 } from "./types";
 import { formatClockTime, formatDuration } from "./format";
-import { createTranslator, type Translator } from "./i18n";
+import { createTranslator, type MessageKey, type Translator } from "./i18n";
 
 const ENGLISH = createTranslator("en");
 
@@ -26,6 +26,8 @@ export interface MainWindowCopy {
   time: string;
   /** Two short lines of supporting copy under the ring. */
   support: string;
+  /** True when `support` is a classical phrase (typeset in Naskh). */
+  supportIsPhrase?: boolean;
   phase: Phase;
   /** Whether the ring should be dimmed. */
   muted: boolean;
@@ -70,10 +72,12 @@ export function describeMainWindow(
 
   if (snapshot.state === "break") {
     const which = snapshot.pending?.kind === "movement" ? "movement" : "eyes";
+    const message = pickMessage(`${which}Break`, snapshot.pending?.id ?? 0, t);
     return {
       label: t(`main.break.${which}.label`),
       time: formatDuration(snapshot.remainingMs),
-      support: t(`main.break.${which}.support`),
+      support: message.text,
+      supportIsPhrase: message.phrase,
       phase: "break",
       muted: false,
     };
@@ -168,6 +172,8 @@ export function snoozeActionLabel(t: Translator = ENGLISH): string {
 export interface PopupCopy {
   title: string;
   body: string;
+  /** True when `body` is a classical phrase (typeset in Naskh). */
+  bodyIsPhrase: boolean;
   kind: ReminderKind;
   /** Whether the popup offers the break and the snooze. */
   actionable: boolean;
@@ -179,30 +185,47 @@ export interface PopupCopy {
  * Maps popup content onto what the popup shows. Pure, like
  * `describeMainWindow`, so the copy is unit-testable.
  */
-export function describePopup(content: PopupContent, t: Translator = ENGLISH): PopupCopy {
+export function describePopup(
+  content: PopupContent,
+  t: Translator = ENGLISH,
+  /** The popup's seq; varies the message of popups that have no reminder id. */
+  seed = 0,
+): PopupCopy {
   switch (content.type) {
-    case "reminder":
+    case "reminder": {
+      const message = pickMessage(
+        content.reminder.kind === "movement" ? "movementReminder" : "eyesReminder",
+        content.reminder.id,
+        t,
+      );
       return {
-        ...reminderCopy(content.reminder.kind, t),
+        title: reminderCopy(content.reminder.kind, t).title,
+        body: message.text,
+        bodyIsPhrase: message.phrase,
         kind: content.reminder.kind,
         actionable: true,
         eyebrow: t("popup.eyebrow"),
       };
+    }
     case "test":
       return {
         ...reminderCopy(content.kind, t),
+        bodyIsPhrase: false,
         kind: content.kind,
         actionable: false,
         eyebrow: t("popup.preview"),
       };
-    case "breakOver":
+    case "breakOver": {
+      const message = pickMessage("breakOver", seed, t);
       return {
         title: t("reminder.breakOver.title"),
-        body: t("reminder.breakOver.body"),
+        body: message.text,
+        bodyIsPhrase: message.phrase,
         kind: content.kind,
         actionable: false,
         eyebrow: t("popup.eyebrow"),
       };
+    }
   }
 }
 
@@ -212,4 +235,51 @@ function reminderCopy(kind: ReminderKind, t: Translator): { title: string; body:
     title: t(`reminder.${which}.title`),
     body: t(`reminder.${which}.body`),
   };
+}
+
+/**
+ * Contextual messages. Each context mixes Breathe's own wording with the
+ * classical phrases that suit it; the phrases are shown as ordinary messages,
+ * never attributed (their sources are kept in content/phrases.sources.json,
+ * which the app does not load).
+ */
+export const MESSAGE_POOLS = {
+  eyesReminder: ["reminder.eyes.body", "phrase.eyesRight"],
+  movementReminder: ["reminder.movement.body", "phrase.bodyRight"],
+  eyesBreak: ["main.break.eyes.support", "phrase.timeAndTime", "phrase.selfRight"],
+  movementBreak: ["main.break.movement.support", "phrase.timeAndTime", "phrase.selfRight"],
+  breakOver: ["reminder.breakOver.body", "phrase.pastTime", "phrase.notAnHour"],
+} as const satisfies Record<string, readonly MessageKey[]>;
+
+export type MessageContext = keyof typeof MESSAGE_POOLS;
+
+/**
+ * Picks the message for `context`, keyed by a value that changes with every
+ * event (a reminder id or a popup seq). Deterministic, so a re-render never
+ * swaps the text, and consecutive events walk through the pool instead of
+ * repeating the same line.
+ */
+export function contextualMessage(
+  context: MessageContext,
+  seed: number,
+  t: Translator = ENGLISH,
+): string {
+  return pickMessage(context, seed, t).text;
+}
+
+export interface PickedMessage {
+  text: string;
+  /** True for a classical phrase, which is typeset in Naskh. */
+  phrase: boolean;
+}
+
+export function pickMessage(
+  context: MessageContext,
+  seed: number,
+  t: Translator = ENGLISH,
+): PickedMessage {
+  const pool: readonly MessageKey[] = MESSAGE_POOLS[context];
+  const index = ((Math.trunc(seed) % pool.length) + pool.length) % pool.length;
+  const key = pool[index] ?? pool[0]!;
+  return { text: t(key), phrase: key.startsWith("phrase.") };
 }

@@ -1,0 +1,76 @@
+{
+  "_purpose": "Internal verification record for the classical phrases in src/locales/*.json (keys phrase.*). Never imported by the app and never shown to users: the interface displays the phrase only, without speaker, narrator or source. See src/locales/catalogs.test.ts, which fails if a catalog contains attribution.",
+  "_method": "Hadith wording and numbering from Sahih al-Bukhari / Sahih Muslim (standard numbering). Non-hadith reports located in the classical works named below via secondary references; a page check against a critical edition is still pending where noted. Quote sites and social media were used only to find candidates, never as evidence.",
+  "phrases": [
+    {
+      "key": "phrase.eyesRight",
+      "text": "إنَّ لِعَينِكَ عليكَ حقًّا.",
+      "kind": "hadith",
+      "source": "Sahih al-Bukhari 1975 (the Prophet to Abdullah ibn Amr): «فإنَّ لجسدك عليك حقًّا، وإنَّ لعينك عليك حقًّا…»",
+      "wordingNote": "Faithful excerpt; the leading conjunction is dropped, no word altered.",
+      "contexts": ["eye-rest reminder"],
+      "status": "approved",
+      "verifiedOn": "2026-11-23"
+    },
+    {
+      "key": "phrase.bodyRight",
+      "text": "إنَّ لِجسدِكَ عليكَ حقًّا.",
+      "kind": "hadith",
+      "source": "Sahih al-Bukhari 1975; Sahih Muslim 1159",
+      "wordingNote": "Faithful excerpt («فإنّ» → «إنّ», conjunction dropped).",
+      "contexts": ["movement reminder"],
+      "status": "approved",
+      "verifiedOn": "2026-11-23"
+    },
+    {
+      "key": "phrase.selfRight",
+      "text": "إنَّ لِنفسِكَ عليكَ حقًّا.",
+      "kind": "hadith",
+      "source": "Sahih al-Bukhari 1968 (Salman to Abu al-Darda', confirmed by the Prophet: «صدق سلمان»); Sunan Abi Dawud 1369 («…وإنَّ لنفسك عليك حقًّا»)",
+      "wordingNote": "Faithful excerpt of «وإنَّ لنفسك عليك حقًّا», conjunction dropped.",
+      "contexts": ["during a break"],
+      "status": "approved",
+      "verifiedOn": "2026-11-23"
+    },
+    {
+      "key": "phrase.timeAndTime",
+      "text": "ساعةً وساعة.",
+      "kind": "hadith",
+      "source": "Sahih Muslim 2750 (hadith of Hanzala: «…ولكن يا حنظلة ساعةً وساعة»)",
+      "wordingNote": "Exact words of the hadith.",
+      "contexts": ["during a break"],
+      "status": "approved",
+      "verifiedOn": "2026-11-23"
+    },
+    {
+      "key": "phrase.pastTime",
+      "text": "الاشتغالُ بفواتِ وقتٍ ماضٍ تضييعُ وقتٍ ثانٍ.",
+      "kind": "maxim",
+      "source": "al-Qushayri, al-Risala, section on the Sufi term «الوقت», introduced with «وقيل» (an anonymous saying reported by al-Qushayri, d. 465 AH)",
+      "wordingNote": "The candidate «الاشتغال بوقت ماض تضييع وقت حاضر» was a paraphrase; the original wording is used. The full sentence is kept: dropping «الاشتغالُ» would misquote it.",
+      "contexts": ["break over / next countdown starts"],
+      "status": "approved; page check against a critical edition pending",
+      "verifiedOn": "2026-11-23"
+    },
+    {
+      "key": "phrase.notAnHour",
+      "text": "إنّي لا يحلُّ لي أن أُضيِّعَ ساعةً من عمري.",
+      "kind": "report",
+      "source": "Ibn Aqil al-Hanbali (d. 513 AH), recorded by Ibn al-Jawzi from Ibn Aqil's own handwriting; reproduced by Ibn Rajab, Dhayl Tabaqat al-Hanabila (entry on Ibn Aqil; secondary reference cites 3/121)",
+      "wordingNote": "Opening clause, consistent across copies; the continuation varies slightly and is not used.",
+      "contexts": ["break over / next countdown starts"],
+      "status": "approved; page check against a critical edition pending",
+      "verifiedOn": "2026-11-23"
+    }
+  ],
+  "excluded": [
+    {
+      "text": "متى الراحة؟ قال: عند أول قدم أضعها في الجنة",
+      "reason": "Reports (Tabaqat al-Hanabila, attributed to Imam Ahmad) read «يضعها», not «أضعها»; the meaning (no rest in this world) contradicts a break app and is strongly religious."
+    },
+    {
+      "text": "راحة القلب في قلة الآثام",
+      "reason": "Conflicting attributions (Thabit ibn Qurra via al-Tha'alibi; Ali ibn Abi Talib) and varying wording; could not be established."
+    }
+  ]
+}

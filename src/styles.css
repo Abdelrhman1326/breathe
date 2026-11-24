@@ -58,7 +58,8 @@
 }
 
 /* Noto Sans Arabic (SIL OFL 1.1), bundled so Arabic renders the same on
-   Linux, Windows and macOS. woff2 only: every Breathe webview supports it. */
+   Linux, Windows and macOS. woff2 only: every Breathe webview supports it.
+   Used only in Arabic documents (see html[lang="ar"] below). */
 @font-face {
   font-family: "Breathe Arabic";
   font-style: normal;
@@ -66,7 +67,6 @@
   font-display: swap;
   src: url("../node_modules/@fontsource/noto-sans-arabic/files/noto-sans-arabic-arabic-400-normal.woff2")
     format("woff2");
-  unicode-range: U+0600-06FF, U+0750-077F, U+0870-08FF, U+FB50-FDFF, U+FE70-FEFF, U+200C-200F, U+2E41, U+25CC;
 }
 
 @font-face {
@@ -76,7 +76,6 @@
   font-display: swap;
   src: url("../node_modules/@fontsource/noto-sans-arabic/files/noto-sans-arabic-arabic-500-normal.woff2")
     format("woff2");
-  unicode-range: U+0600-06FF, U+0750-077F, U+0870-08FF, U+FB50-FDFF, U+FE70-FEFF, U+200C-200F, U+2E41, U+25CC;
 }
 
 @font-face {
@@ -86,15 +85,31 @@
   font-display: swap;
   src: url("../node_modules/@fontsource/noto-sans-arabic/files/noto-sans-arabic-arabic-600-normal.woff2")
     format("woff2");
-  unicode-range: U+0600-06FF, U+0750-077F, U+0870-08FF, U+FB50-FDFF, U+FE70-FEFF, U+200C-200F, U+2E41, U+25CC;
+}
+
+/* Noto Naskh Arabic (SIL OFL 1.1) for the classical phrases: Naskh is the
+   face made for fully vocalised classical text. */
+@font-face {
+  font-family: "Breathe Naskh";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../node_modules/@fontsource/noto-naskh-arabic/files/noto-naskh-arabic-arabic-400-normal.woff2")
+    format("woff2");
+}
+
+@font-face {
+  font-family: "Breathe Naskh";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("../node_modules/@fontsource/noto-naskh-arabic/files/noto-naskh-arabic-arabic-500-normal.woff2")
+    format("woff2");
 }
 
 @theme inline {
-  /* "Breathe Arabic" covers only the Arabic blocks (see @font-face below), so
-     Latin text keeps the system font and Arabic gets one consistent face on
-     every platform instead of whatever fallback the OS picks. */
-  --font-sans: "Breathe Arabic", ui-sans-serif, system-ui, -apple-system,
-    "Cantarell", "Inter", "Noto Sans", "Segoe UI", sans-serif;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Cantarell", "Inter",
+    "Noto Sans", "Segoe UI", sans-serif;
 
   --color-app: var(--app-bg);
   --color-app-elevated: var(--app-bg-elevated);
@@ -124,8 +139,15 @@
     height: 100%;
   }
 
-  /* Arabic script needs a little more vertical room than Latin. */
+  /* Arabic uses the bundled face on every platform, with a little more
+     vertical room than Latin. The Arabic fonts are declared WITHOUT
+     unicode-range on purpose: a range that leaves out the space makes WebKit
+     split a sentence into one run per word, and words that start a run with
+     stacked marks (يحلُّ، ساعةً) are drawn off the baseline. Applying the
+     font only to Arabic documents keeps English text on the system font;
+     Latin words inside Arabic (the brand name) fall back to it as well. */
   html[lang="ar"] body {
+    font-family: "Breathe Arabic", var(--font-sans);
     line-height: 1.6;
   }
 
@@ -207,6 +229,16 @@ html[data-window="popup"] body {
 
 .popup-enter {
   animation: popup-enter 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+/* A classical phrase shown as one of Breathe's messages. Latin text (the
+   English equivalents) keeps the interface font. */
+.phrase {
+  line-height: 1.75;
+}
+
+html[lang="ar"] .phrase {
+  font-family: "Breathe Naskh", "Breathe Arabic", var(--font-sans);
 }
 
 /* Slim, quiet scrollbar for the settings pane. */

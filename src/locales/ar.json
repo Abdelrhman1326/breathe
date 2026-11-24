@@ -152,6 +152,7 @@
   "tooltip.awaiting": "حان وقت الاستراحة — Breathe",
   "tooltip.break": "في استراحة، بقي {time} — Breathe",
   "tooltip.stopped": "متوقّف — Breathe",
+  "menubar.awaiting": "استراحة",
   "window.settings": "إعدادات Breathe",
   "window.popup": "تذكير Breathe"
 }

@@ -18,7 +18,7 @@ use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Wry};
 
 use crate::i18n;
-use crate::model::{Language, ScheduleState};
+use crate::model::{Language, ScheduleState, Snapshot};
 
 pub const TRAY_ID: &str = "breathe-tray";
 
@@ -32,6 +32,23 @@ pub struct TrayHandles {
     /// Last applied labels, so the 500 ms worker tick only touches the menu when
     /// something actually changed.
     applied: Mutex<Applied>,
+    /// Last text shown next to the icon in the macOS menu bar.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    title: Mutex<Option<String>>,
+}
+
+/// The text shown next to the tray icon in the macOS menu bar: the live
+/// countdown, a short word while a reminder waits, nothing when paused.
+#[cfg_attr(not(any(target_os = "macos", test)), allow(dead_code))]
+pub fn menu_bar_title(snapshot: &Snapshot, language: Language) -> Option<String> {
+    let seconds = snapshot.remaining_ms.div_euclid(1000).max(0);
+    let time = format!("{:02}:{:02}", seconds / 60, seconds % 60);
+    match snapshot.state {
+        ScheduleState::Running if snapshot.next_kind.is_none() => None,
+        ScheduleState::Running | ScheduleState::Snoozed | ScheduleState::OnBreak => Some(time),
+        ScheduleState::Awaiting => Some(i18n::text(language, "menubar.awaiting")),
+        ScheduleState::Paused | ScheduleState::Stopped => None,
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -123,6 +140,20 @@ impl TrayHandles {
         *applied = next;
         tooltip_changed
     }
+
+    /// Records the menu bar title; true when it differs from the last one.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    pub fn title_changed(&self, title: &Option<String>) -> bool {
+        let mut last = self
+            .title
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if *last == *title {
+            return false;
+        }
+        last.clone_from(title);
+        true
+    }
 }
 
 pub fn build(app: &AppHandle, language: Language) -> tauri::Result<TrayHandles> {
@@ -158,6 +189,18 @@ pub fn build(app: &AppHandle, language: Language) -> tauri::Result<TrayHandles> 
         .show_menu_on_left_click(true)
         .on_menu_event(on_menu_event);
 
+    // macOS menu bar icons are monochrome template images that the system
+    // tints for light and dark bars; the coloured app icon would look out of
+    // place there. Other platforms keep the app icon.
+    #[cfg(target_os = "macos")]
+    {
+        builder = builder
+            .icon(tauri::image::Image::from_bytes(include_bytes!(
+                "../icons/tray-template.png"
+            ))?)
+            .icon_as_template(true);
+    }
+    #[cfg(not(target_os = "macos"))]
     if let Some(icon) = app.default_window_icon().cloned() {
         builder = builder.icon(icon);
     }
@@ -172,6 +215,7 @@ pub fn build(app: &AppHandle, language: Language) -> tauri::Result<TrayHandles> 
         settings,
         quit,
         applied: Mutex::new(Applied::default()),
+        title: Mutex::new(None),
     })
 }
 
@@ -197,6 +241,51 @@ fn on_menu_event(app: &AppHandle, event: tauri::menu::MenuEvent) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::ReminderKind;
+
+    fn snapshot(state: ScheduleState, remaining_ms: i64) -> Snapshot {
+        Snapshot {
+            state,
+            window_hidden: true,
+            interval_minutes: 45,
+            remaining_ms,
+            remaining_fraction: 1.0,
+            next_kind: Some(ReminderKind::Eyes),
+            next_at_ms: None,
+            snooze_remaining_ms: None,
+            pending: None,
+        }
+    }
+
+    #[test]
+    fn the_menu_bar_shows_the_live_countdown() {
+        let running = snapshot(ScheduleState::Running, 23 * 60_000 + 41_000);
+        assert_eq!(
+            menu_bar_title(&running, Language::En).as_deref(),
+            Some("23:41")
+        );
+        let on_break = snapshot(ScheduleState::OnBreak, 2 * 60_000 + 5_000);
+        assert_eq!(
+            menu_bar_title(&on_break, Language::Ar).as_deref(),
+            Some("02:05")
+        );
+    }
+
+    #[test]
+    fn the_menu_bar_names_a_waiting_reminder_and_hides_when_paused() {
+        let awaiting = snapshot(ScheduleState::Awaiting, 0);
+        assert_eq!(
+            menu_bar_title(&awaiting, Language::En).as_deref(),
+            Some("Break")
+        );
+        assert_eq!(
+            menu_bar_title(&snapshot(ScheduleState::Paused, 60_000), Language::En),
+            None
+        );
+        let mut off = snapshot(ScheduleState::Running, 60_000);
+        off.next_kind = None;
+        assert_eq!(menu_bar_title(&off, Language::En), None);
+    }
 
     #[test]
     fn a_waiting_reminder_offers_the_break_and_the_snooze() {

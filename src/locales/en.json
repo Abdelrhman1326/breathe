@@ -148,6 +148,7 @@
   "tooltip.awaiting": "Breathe — time for a break",
   "tooltip.break": "Breathe — on a break, {time} left",
   "tooltip.stopped": "Breathe — stopped",
+  "menubar.awaiting": "Break",
   "window.settings": "Breathe Settings",
   "window.popup": "Breathe reminder"
 }

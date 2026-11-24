@@ -81,6 +81,8 @@ pub struct Settings {
     pub eyes_enabled: bool,
     pub movement_enabled: bool,
     pub snooze_enabled: bool,
+    /// Whether popups play a short chime.
+    pub sound_enabled: bool,
     pub theme: ThemePreference,
     pub start_with_session: bool,
     /// Whether the schedule should be running the next time the app launches.
@@ -94,6 +96,7 @@ impl Default for Settings {
             eyes_enabled: true,
             movement_enabled: true,
             snooze_enabled: true,
+            sound_enabled: true,
             theme: ThemePreference::System,
             start_with_session: false,
             start_running: true,
@@ -121,6 +124,7 @@ pub struct SettingsPatch {
     pub eyes_enabled: Option<bool>,
     pub movement_enabled: Option<bool>,
     pub snooze_enabled: Option<bool>,
+    pub sound_enabled: Option<bool>,
     pub theme: Option<ThemePreference>,
     pub start_with_session: Option<bool>,
     pub start_running: Option<bool>,
@@ -157,6 +161,9 @@ impl SettingsPatch {
         }
         if let Some(value) = self.snooze_enabled {
             base.snooze_enabled = value;
+        }
+        if let Some(value) = self.sound_enabled {
+            base.sound_enabled = value;
         }
         if let Some(value) = self.theme {
             base.theme = value;
@@ -261,6 +268,7 @@ mod tests {
     #[test]
     fn defaults_match_the_product_spec() {
         let settings = Settings::default();
+        assert!(settings.sound_enabled);
         assert_eq!(settings.interval_minutes, 45);
         assert!(settings.eyes_enabled);
         assert!(settings.movement_enabled);
@@ -355,6 +363,7 @@ mod tests {
             eyes_enabled: false,
             movement_enabled: true,
             snooze_enabled: false,
+            sound_enabled: false,
             theme: ThemePreference::Dark,
             start_with_session: true,
             start_running: false,

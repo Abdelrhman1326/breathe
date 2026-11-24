@@ -42,6 +42,8 @@ export interface Settings {
   eyesEnabled: boolean;
   movementEnabled: boolean;
   snoozeEnabled: boolean;
+  /** Whether popups play a short chime. */
+  soundEnabled: boolean;
   theme: ThemePreference;
   startWithSession: boolean;
   /** Whether scheduling should be active after the next launch. */

@@ -200,6 +200,20 @@ export function RemindersPanel({
             />
           }
         />
+        <SettingRow
+          icon={<BellIcon className="h-[18px] w-[18px]" />}
+          title="Play a sound"
+          description="A soft chime when a reminder appears and when a break ends."
+          control={
+            <Toggle
+              label="Play a sound"
+              checked={settings.soundEnabled}
+              onChange={(next) => {
+                void update({ soundEnabled: next });
+              }}
+            />
+          }
+        />
       </Rows>
 
       <p className="mt-4 text-[12.5px] leading-relaxed text-muted">

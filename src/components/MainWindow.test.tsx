@@ -8,6 +8,7 @@ const settings: Settings = {
   eyesEnabled: true,
   movementEnabled: true,
   snoozeEnabled: true,
+  soundEnabled: true,
   theme: "system",
   startWithSession: false,
   startRunning: true,

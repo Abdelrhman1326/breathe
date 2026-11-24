@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { playChime } from "@/lib/chime";
 import { dismissPopup, getPopup, onPopup } from "@/lib/ipc";
 import {
   breakActionLabel,
@@ -99,13 +100,29 @@ export function PopupCard({ view, snoozeEnabled, actions }: PopupCardProps) {
 
 interface PopupWindowProps {
   snoozeEnabled: boolean;
+  soundEnabled: boolean;
   onTakeBreak: (reminderId: number) => void;
   onSnooze: (reminderId: number) => void;
 }
 
 /** The `popup` window: mirrors Rust's popup view and renders it. */
-export function PopupWindow({ snoozeEnabled, onTakeBreak, onSnooze }: PopupWindowProps) {
+export function PopupWindow({
+  snoozeEnabled,
+  soundEnabled,
+  onTakeBreak,
+  onSnooze,
+}: PopupWindowProps) {
   const [view, setView] = useState<PopupView | null>(null);
+  const chimedFor = useRef<number | null>(null);
+
+  // One chime per popup: Rust gives every new popup a new seq, so re-renders
+  // and a repeated event for the same popup stay silent.
+  const seq = view?.seq ?? null;
+  useEffect(() => {
+    if (seq === null || chimedFor.current === seq) return;
+    chimedFor.current = seq;
+    if (soundEnabled) void playChime();
+  }, [seq, soundEnabled]);
 
   useEffect(() => {
     document.documentElement.dataset.window = "popup";

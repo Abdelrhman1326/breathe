@@ -20,6 +20,7 @@ export default function App() {
     return (
       <PopupWindow
         snoozeEnabled={controller.settings.snoozeEnabled}
+        soundEnabled={controller.settings.soundEnabled}
         onTakeBreak={(reminderId) => {
           void controller.takeBreak(reminderId);
         }}

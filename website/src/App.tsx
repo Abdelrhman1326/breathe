@@ -1,4 +1,5 @@
 import {
+  Apple,
   ArrowRight,
   ArrowUpRight,
   Box,
@@ -409,6 +410,60 @@ function InstallPanel({
     );
   }
 
+  if (platform === "macos") {
+    return (
+      <div className="install-panel" role="region" aria-label="macOS installation">
+        <div className="install-main">
+          <div className="install-heading">
+            <div>
+              <h3>macOS 11+ / Preview</h3>
+              <p>Universal Apple silicon and Intel app. Preview build, not yet in the stable release.</p>
+            </div>
+            <span className="release-status release-status--warning">
+              <CircleAlert aria-hidden="true" />
+              Preview — not in stable release
+            </span>
+          </div>
+          <div className="release-action" aria-live="polite">
+            <a
+              className="button button--primary download-button"
+              href={`${REPO_DOCS_URL}/MACOS.md`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              <Download aria-hidden="true" />
+              macOS preview notes
+            </a>
+            <p className="asset-line">
+              <code>Breathe.app (universal .dmg)</code>
+              <span>Built by CI, not hardware-verified</span>
+            </p>
+            <a className="text-link" href={GITHUB_RELEASES_URL} target="_blank" rel="noreferrer">
+              Stable releases (Linux/Windows) <ArrowUpRight aria-hidden="true" />
+            </a>
+          </div>
+          <ol className="install-steps">
+            <li>Download a preview DMG from a successful <code>CI</code> run on GitHub Actions, or build from source.</li>
+            <li>Open the DMG and drag Breathe to Applications.</li>
+            <li>On first launch, macOS may block the unsigned app: open <strong>System Settings → Privacy &amp; Security</strong> and choose <strong>Open Anyway</strong>.</li>
+          </ol>
+          <p className="install-note">
+            macOS support is implemented with public APIs and checked in CI, but it has not been verified on real Mac hardware yet. See the macOS notes for status, limitations, and the verification checklist.
+          </p>
+          <InstallAside
+            title="Preview status"
+            items={[
+              { label: "Package", value: "Universal .dmg (preview)" },
+              { label: "Minimum macOS", value: "11 Big Sur" },
+              { label: "Stable release", value: "Not included yet" },
+              { label: "Verification", value: "CI-built, not hardware-verified" },
+            ]}
+          />
+        </div>
+      </div>
+    );
+  }
+
   if (platform === "fedora") {
     return (
       <div className="install-panel" role="region" aria-label="Fedora installation">
@@ -598,13 +653,15 @@ function App() {
     selected && platform
       ? platform === "windows"
         ? "Download for Windows"
-        : platform === "fedora"
-          ? "Download the RPM"
-          : platform === "ubuntu"
-            ? "Download the DEB"
-            : platform === "appimage"
-              ? "Download the AppImage"
-              : "Get the AUR build files"
+        : platform === "macos"
+          ? "See macOS preview"
+          : platform === "fedora"
+            ? "Download the RPM"
+            : platform === "ubuntu"
+              ? "Download the DEB"
+              : platform === "appimage"
+                ? "Download the AppImage"
+                : "Get the AUR build files"
       : "Choose your installation";
 
   return (
@@ -821,13 +878,15 @@ function App() {
               const Icon =
                 item.id === "windows"
                   ? Monitor
-                  : item.id === "fedora"
-                    ? Package
-                    : item.id === "ubuntu"
-                      ? Layers
-                      : item.id === "arch"
-                        ? Terminal
-                        : Box;
+                  : item.id === "macos"
+                    ? Apple
+                    : item.id === "fedora"
+                      ? Package
+                      : item.id === "ubuntu"
+                        ? Layers
+                        : item.id === "arch"
+                          ? Terminal
+                          : Box;
               return (
                 <button
                   type="button"
@@ -862,8 +921,9 @@ function App() {
               <div>
                 <h3>Select your platform</h3>
                 <p>
-                  Breathe targets Linux and Windows. Choose an option above for
-                  verified downloads and honest compatibility notes.
+                  Breathe targets Linux, Windows, and macOS (preview). Choose an
+                  option above for verified downloads and honest compatibility
+                  notes.
                 </p>
               </div>
             </div>
@@ -883,7 +943,7 @@ function App() {
             <SectionIntro
               eyebrow="Requirements and limits"
               title="Honest about what runs where."
-              description="Breathe uses native desktop services. Core Windows controls have been checked in a Windows 10 VM; notifications, tray behavior, and device-specific details still need broader testing."
+              description="Breathe uses native desktop services. Core Windows controls have been checked in a Windows 10 VM; macOS support is a public-API preview built in CI but not yet verified on Mac hardware."
             />
             <div className="requirement-grid">
               <article className="requirement-card">
@@ -893,6 +953,15 @@ function App() {
                   WebView2 Evergreen Runtime. The installer can fetch it when
                   missing. Notification permissions and Focus Assist can suppress
                   reminders.
+                </p>
+              </article>
+              <article className="requirement-card">
+                <Apple aria-hidden="true" />
+                <h3>macOS 11+ (preview)</h3>
+                <p>
+                  Universal Apple silicon and Intel preview build. Checked in CI,
+                  but not yet verified on real Mac hardware. Unsigned builds
+                  require “Open Anyway” in Privacy &amp; Security.
                 </p>
               </article>
               <article className="requirement-card">

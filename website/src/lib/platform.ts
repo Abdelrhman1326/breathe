@@ -1,4 +1,4 @@
-export type InstallPlatform = "windows" | "fedora" | "ubuntu" | "arch" | "appimage";
+export type InstallPlatform = "windows" | "macos" | "fedora" | "ubuntu" | "arch" | "appimage";
 
 export const INSTALL_PLATFORMS: ReadonlyArray<{
   id: InstallPlatform;
@@ -6,6 +6,7 @@ export const INSTALL_PLATFORMS: ReadonlyArray<{
   shortLabel: string;
 }> = [
   { id: "windows", label: "Windows 10/11 x64", shortLabel: "Windows" },
+  { id: "macos", label: "macOS 11+ / Preview", shortLabel: "macOS" },
   { id: "fedora", label: "Fedora / RPM", shortLabel: "Fedora" },
   { id: "ubuntu", label: "Ubuntu / Debian / DEB", shortLabel: "Ubuntu / Debian" },
   { id: "arch", label: "Arch Linux / AUR", shortLabel: "Arch" },
@@ -18,6 +19,7 @@ export function detectPlatform(userAgent?: string): InstallPlatform | null {
     (typeof navigator === "undefined" ? "" : navigator.userAgent);
   const normalized = value.toLowerCase();
   if (normalized.includes("windows")) return "windows";
+  if (normalized.includes("macintosh") || normalized.includes("mac os x")) return "macos";
   // Browser detection can identify Linux, but not the distribution. Start with
   // the distro-neutral AppImage option and let the visitor choose RPM, DEB or AUR.
   if (normalized.includes("linux") || normalized.includes("x11")) return "appimage";

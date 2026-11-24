@@ -25,13 +25,17 @@ describe("platform detection", () => {
     ).toBe("appimage");
   });
 
+  it("recognizes macOS browsers", () => {
+    expect(detectPlatform("Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0)")).toBe("macos");
+  });
+
   it("leaves unsupported platforms for manual selection", () => {
-    expect(detectPlatform("Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0)")).toBeNull();
     expect(detectPlatform("")).toBeNull();
   });
 
   it("provides short labels for the install selector", () => {
     expect(platformLabel("windows")).toBe("Windows");
+    expect(platformLabel("macos")).toBe("macOS");
     expect(platformLabel("ubuntu")).toBe("Ubuntu / Debian");
     expect(platformLabel("arch")).toBe("Arch");
   });

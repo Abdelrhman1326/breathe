@@ -51,7 +51,7 @@ pub fn status() -> NotificationStatus {
 
 /// True when a notification service is reachable right now. Only the Linux
 /// delivery path needs to ask.
-#[cfg_attr(target_os = "windows", allow(dead_code))]
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub fn is_available() -> bool {
     status().available
 }

@@ -63,7 +63,9 @@ function bothDisabled(settings: Settings): boolean {
 
 export function GeneralPanel({ settings, snapshot, update }: PanelProps) {
   const remindersOff = !settings.eyesEnabled && !settings.movementEnabled;
-  const running = snapshot.state === "running";
+  // A waiting reminder, a break and a snooze are all part of an active
+  // schedule; only an explicit pause stops it.
+  const running = snapshot.state !== "paused" && snapshot.state !== "quit";
 
   return (
     <>

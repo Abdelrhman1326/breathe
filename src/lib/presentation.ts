@@ -7,6 +7,9 @@ import {
   type Snapshot,
 } from "./types";
 import { formatClockTime, formatDuration } from "./format";
+import { createTranslator, type Translator } from "./i18n";
+
+const ENGLISH = createTranslator("en");
 
 export type Phase =
   | "running"
@@ -41,12 +44,13 @@ export function remindersDisabled(settings: Settings): boolean {
 export function describeMainWindow(
   settings: Settings,
   snapshot: Snapshot,
+  t: Translator = ENGLISH,
 ): MainWindowCopy {
   if (remindersDisabled(settings)) {
     return {
-      label: "Reminders are off",
+      label: t("main.off.label"),
       time: "--:--",
-      support: "Turn on eye rest or movement reminders in Settings.",
+      support: t("main.off.support"),
       phase: "disabled",
       muted: true,
     };
@@ -54,27 +58,22 @@ export function describeMainWindow(
 
   if (snapshot.state === "awaiting") {
     const kind = snapshot.pending?.kind ?? snapshot.nextKind;
+    const which = kind === "movement" ? "movement" : "eyes";
     return {
-      label: kind === "movement" ? "Time to move a little" : "Time to rest your eyes",
+      label: t(`main.awaiting.${which}.label`),
       time: formatDuration(0),
-      support:
-        kind === "movement"
-          ? "Stand up and stretch. Take a short break, or snooze for a while."
-          : "Look into the distance. Take a short break, or snooze for a while.",
+      support: t(`main.awaiting.${which}.support`),
       phase: "awaiting",
       muted: false,
     };
   }
 
   if (snapshot.state === "break") {
-    const kind = snapshot.pending?.kind ?? null;
+    const which = snapshot.pending?.kind === "movement" ? "movement" : "eyes";
     return {
-      label: kind === "movement" ? "Movement break" : "Eye break",
+      label: t(`main.break.${which}.label`),
       time: formatDuration(snapshot.remainingMs),
-      support:
-        kind === "movement"
-          ? "Stretch or walk around. The next countdown starts after your break."
-          : "Let your eyes rest on something far away. The next countdown starts after your break.",
+      support: t(`main.break.${which}.support`),
       phase: "break",
       muted: false,
     };
@@ -82,60 +81,68 @@ export function describeMainWindow(
 
   if (snapshot.state === "paused") {
     return {
-      label: "Paused",
+      label: t("main.paused.label"),
       time: formatDuration(snapshot.remainingMs),
-      support: "Reminders are paused. You can resume them anytime.",
+      support: t("main.paused.support"),
       phase: "paused",
       muted: true,
     };
   }
 
   if (snapshot.state === "snoozed") {
+    const at = formatClockTime(snapshot.nextAtMs, t);
     return {
-      label: "Snoozed",
+      label: t("main.snoozed.label"),
       time: formatDuration(snapshot.snoozeRemainingMs ?? snapshot.remainingMs),
-      support: snoozeSupport(snapshot.nextAtMs),
+      support: at ? t("main.snoozed.supportAt", { time: at }) : t("main.snoozed.supportSoon"),
       phase: "snoozed",
       muted: true,
     };
   }
 
   return {
-    label: runningLabel(snapshot.nextKind),
+    label: runningLabel(snapshot.nextKind, t),
     time: formatDuration(snapshot.remainingMs),
-    support: "A short break now helps you focus better later.",
+    support: t("main.running.support"),
     phase: "running",
     muted: false,
   };
 }
 
-function runningLabel(kind: ReminderKind | null): string {
+function runningLabel(kind: ReminderKind | null, t: Translator): string {
   switch (kind) {
     case "movement":
-      return "Next movement break in";
+      return t("main.next.movement");
     case "eyes":
-      return "Next eye break in";
+      return t("main.next.eyes");
     default:
-      return "Next break in";
+      return t("main.next.any");
   }
 }
 
-function snoozeSupport(nextAtMs: number | null): string {
-  const at = formatClockTime(nextAtMs);
-  return at ? `Next reminder at ${at}.` : "The next reminder is scheduled shortly.";
-}
-
 /** Label for the single primary action in the main window. */
-export function primaryActionLabel(phase: Phase): string {
+export function primaryActionLabel(phase: Phase, t: Translator = ENGLISH): string {
   switch (phase) {
     case "awaiting":
-      return breakActionLabel();
+      return breakActionLabel(t);
     case "snoozed":
-      return "Resume now";
+      return t("action.resumeNow");
     case "paused":
-      return "Resume";
+      return t("action.resume");
     default:
-      return "Pause";
+      return t("action.pause");
+  }
+}
+
+/** Accessible name of the primary action, naming what it acts on. */
+export function primaryActionAriaLabel(phase: Phase, t: Translator = ENGLISH): string {
+  switch (phase) {
+    case "snoozed":
+      return t("action.resumeNowReminders");
+    case "paused":
+      return t("action.resumeReminders");
+    default:
+      return t("action.pauseReminders");
   }
 }
 
@@ -150,12 +157,12 @@ export function effectiveIntervalMinutes(
   return snapshot.intervalMinutes || settings.intervalMinutes;
 }
 
-export function breakActionLabel(): string {
-  return `Take a ${BREAK_MINUTES}-minute break`;
+export function breakActionLabel(t: Translator = ENGLISH): string {
+  return t("action.takeBreak", { count: BREAK_MINUTES });
 }
 
-export function snoozeActionLabel(): string {
-  return `Snooze ${SNOOZE_MINUTES} minutes`;
+export function snoozeActionLabel(t: Translator = ENGLISH): string {
+  return t("action.snooze", { count: SNOOZE_MINUTES });
 }
 
 export interface PopupCopy {
@@ -172,41 +179,37 @@ export interface PopupCopy {
  * Maps popup content onto what the popup shows. Pure, like
  * `describeMainWindow`, so the copy is unit-testable.
  */
-export function describePopup(content: PopupContent): PopupCopy {
+export function describePopup(content: PopupContent, t: Translator = ENGLISH): PopupCopy {
   switch (content.type) {
     case "reminder":
       return {
-        ...reminderCopy(content.reminder.kind),
+        ...reminderCopy(content.reminder.kind, t),
         kind: content.reminder.kind,
         actionable: true,
-        eyebrow: "Breathe",
+        eyebrow: t("popup.eyebrow"),
       };
     case "test":
       return {
-        ...reminderCopy(content.kind),
+        ...reminderCopy(content.kind, t),
         kind: content.kind,
         actionable: false,
-        eyebrow: "Preview",
+        eyebrow: t("popup.preview"),
       };
     case "breakOver":
       return {
-        title: "Break's over",
-        body: "Welcome back. Your next reminder countdown has started.",
+        title: t("reminder.breakOver.title"),
+        body: t("reminder.breakOver.body"),
         kind: content.kind,
         actionable: false,
-        eyebrow: "Breathe",
+        eyebrow: t("popup.eyebrow"),
       };
   }
 }
 
-function reminderCopy(kind: ReminderKind): { title: string; body: string } {
-  return kind === "movement"
-    ? {
-        title: "Time to move a little",
-        body: "Stand up, stretch, and give your body a chance to move.",
-      }
-    : {
-        title: "Time to rest your eyes",
-        body: "Look away from the screen and let your eyes rest on something far away.",
-      };
+function reminderCopy(kind: ReminderKind, t: Translator): { title: string; body: string } {
+  const which = kind === "movement" ? "movement" : "eyes";
+  return {
+    title: t(`reminder.${which}.title`),
+    body: t(`reminder.${which}.body`),
+  };
 }

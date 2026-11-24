@@ -1,6 +1,7 @@
 import { useState, type ComponentType, type ReactElement } from "react";
 import type { BreatheController } from "@/hooks/useBreathe";
 import { cn } from "@/lib/cn";
+import { useT } from "@/i18n/I18nProvider";
 import { TitleBar } from "../TitleBar";
 import {
   BellIcon,
@@ -22,16 +23,15 @@ type SectionId = "general" | "reminders" | "appearance" | "startup" | "about";
 
 interface NavItem {
   id: SectionId;
-  label: string;
   Icon: ComponentType<{ className?: string }>;
 }
 
 const NAV: NavItem[] = [
-  { id: "general", label: "General", Icon: ClockIcon },
-  { id: "reminders", label: "Reminders", Icon: BellIcon },
-  { id: "appearance", label: "Appearance", Icon: PaletteIcon },
-  { id: "startup", label: "Startup", Icon: PowerIcon },
-  { id: "about", label: "About", Icon: InfoIcon },
+  { id: "general", Icon: ClockIcon },
+  { id: "reminders", Icon: BellIcon },
+  { id: "appearance", Icon: PaletteIcon },
+  { id: "startup", Icon: PowerIcon },
+  { id: "about", Icon: InfoIcon },
 ];
 
 interface SettingsWindowProps {
@@ -39,6 +39,7 @@ interface SettingsWindowProps {
 }
 
 export function SettingsWindow({ controller }: SettingsWindowProps) {
+  const t = useT();
   const [active, setActive] = useState<SectionId>("general");
   const { settings, snapshot } = controller;
 
@@ -82,15 +83,15 @@ export function SettingsWindow({ controller }: SettingsWindowProps) {
         onHide={() => {
           void controller.hide();
         }}
-        hideLabel="Close settings"
+        hideLabel={t("titlebar.closeSettings")}
       />
 
       <div className="flex min-h-0 flex-1">
         <nav
-          aria-label="Settings sections"
+          aria-label={t("settings.nav.aria")}
           className="flex w-[204px] shrink-0 flex-col gap-1 px-3.5 pb-4"
         >
-          {NAV.map(({ id, label, Icon }) => {
+          {NAV.map(({ id, Icon }) => {
             const isActive = active === id;
             return (
               <button
@@ -106,7 +107,7 @@ export function SettingsWindow({ controller }: SettingsWindowProps) {
                 )}
               >
                 <Icon className="h-[17px] w-[17px] shrink-0" />
-                {label}
+                {t(`settings.nav.${id}`)}
               </button>
             );
           })}
@@ -126,7 +127,7 @@ export function SettingsWindow({ controller }: SettingsWindowProps) {
                       onClick={controller.clearError}
                       className="shrink-0 text-[12px] font-medium underline decoration-dotted"
                     >
-                      Dismiss
+                      {t("action.dismiss")}
                     </button>
                   </div>
                 </Note>

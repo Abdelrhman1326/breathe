@@ -42,6 +42,7 @@ let mockSettings: Settings = {
   movementEnabled: true,
   snoozeEnabled: true,
   soundEnabled: true,
+  language: "en",
   theme: "system",
   startWithSession: false,
   startRunning: true,

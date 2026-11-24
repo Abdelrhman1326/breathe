@@ -2,6 +2,7 @@ import { useBreathe } from "@/hooks/useBreathe";
 import { MainWindow } from "@/components/MainWindow";
 import { SettingsWindow } from "@/components/settings/SettingsWindow";
 import { PopupWindow } from "@/components/PopupWindow";
+import { I18nProvider } from "@/i18n/I18nProvider";
 
 /**
  * Both windows load the same bundle and route on the Tauri window label. The
@@ -9,7 +10,14 @@ import { PopupWindow } from "@/components/PopupWindow";
  */
 export default function App() {
   const controller = useBreathe();
+  return (
+    <I18nProvider language={controller.settings?.language ?? "en"}>
+      <WindowContent controller={controller} />
+    </I18nProvider>
+  );
+}
 
+function WindowContent({ controller }: { controller: ReturnType<typeof useBreathe> }) {
   if (!controller.ready || !controller.settings || !controller.snapshot) {
     // Keep the frame painted in the right colour while state loads, so the
     // window never flashes white.

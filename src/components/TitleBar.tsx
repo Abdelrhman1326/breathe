@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { cn } from "@/lib/cn";
+import { useT } from "@/i18n/I18nProvider";
 import { CloseIcon, LeafMark, MinusIcon } from "./icons";
 
 interface BarButtonProps {
@@ -44,25 +45,26 @@ export function TitleBar({
   trailing,
   onMinimize,
   onHide,
-  hideLabel = "Hide Breathe to the background",
+  hideLabel,
 }: TitleBarProps) {
+  const t = useT();
   return (
     <header className="drag-region flex h-12 shrink-0 items-center gap-2.5 px-3.5">
       <LeafMark className="h-[19px] w-[19px] text-accent" />
       <h1 className="text-[14.5px] font-medium tracking-[-0.01em] text-fg">
-        Breathe
+        {t("app.name")}
       </h1>
 
       <div className="no-drag ml-auto flex items-center gap-0.5">
         {trailing ?? (
           <>
             {onMinimize ? (
-              <BarButton label="Minimize" onClick={onMinimize}>
+              <BarButton label={t("titlebar.minimize")} onClick={onMinimize}>
                 <MinusIcon className="h-4 w-4" />
               </BarButton>
             ) : null}
             {onHide ? (
-              <BarButton label={hideLabel} onClick={onHide}>
+              <BarButton label={hideLabel ?? t("titlebar.hide")} onClick={onHide}>
                 <CloseIcon className="h-4 w-4" />
               </BarButton>
             ) : null}

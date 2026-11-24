@@ -55,7 +55,7 @@ export function TitleBar({
         {t("app.name")}
       </h1>
 
-      <div className="no-drag ml-auto flex items-center gap-0.5">
+      <div className="no-drag ms-auto flex items-center gap-0.5">
         {trailing ?? (
           <>
             {onMinimize ? (

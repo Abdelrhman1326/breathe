@@ -42,7 +42,12 @@ let mockSettings: Settings = {
   movementEnabled: true,
   snoozeEnabled: true,
   soundEnabled: true,
-  language: "en",
+  // Browser preview only: `?lang=ar` renders the interface in Arabic.
+  language:
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).get("lang") === "ar"
+      ? "ar"
+      : "en",
   theme: "system",
   startWithSession: false,
   startRunning: true,

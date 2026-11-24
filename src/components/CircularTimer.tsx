@@ -85,7 +85,9 @@ export function CircularTimer({
             muted ? "text-muted" : "text-fg",
           )}
         >
-          {timeText}
+          {/* MM:SS is read left to right in every language, so isolate it from
+              the surrounding text direction. */}
+          <bdi dir="ltr">{timeText}</bdi>
         </span>
         <LeafMark className="mt-2.5 h-[15px] w-[15px] text-accent/70" />
       </div>

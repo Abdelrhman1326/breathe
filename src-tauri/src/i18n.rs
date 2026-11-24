@@ -11,6 +11,7 @@ use std::sync::OnceLock;
 use crate::model::Language;
 
 const EN: &str = include_str!("../../src/locales/en.json");
+const AR: &str = include_str!("../../src/locales/ar.json");
 
 type Catalog = HashMap<String, String>;
 
@@ -26,21 +27,36 @@ fn english() -> &'static Catalog {
     CATALOG.get_or_init(|| parse(EN))
 }
 
+fn arabic() -> &'static Catalog {
+    static CATALOG: OnceLock<Catalog> = OnceLock::new();
+    CATALOG.get_or_init(|| parse(AR))
+}
+
 fn catalog(language: Language) -> &'static Catalog {
     match language {
         Language::En => english(),
-        // Arabic arrives with its translation; until then it falls back.
-        Language::Ar => english(),
+        Language::Ar => arabic(),
     }
 }
 
+/// Right-to-left mark. Native surfaces (tray menu, tooltip, window title)
+/// have no `dir` attribute and guess the paragraph direction from the first
+/// strong character; an Arabic string that begins with the Latin brand name
+/// would be laid out left to right and read out of order. Leading with RLM
+/// makes them render right to left.
+const RLM: char = '\u{200F}';
+
 /// The message for `key` in `language`.
 pub fn text(language: Language, key: &str) -> String {
-    catalog(language)
+    let message = catalog(language)
         .get(key)
         .or_else(|| english().get(key))
         .cloned()
-        .unwrap_or_else(|| key.to_string())
+        .unwrap_or_else(|| key.to_string());
+    match language {
+        Language::Ar => format!("{RLM}{message}"),
+        Language::En => message,
+    }
 }
 
 /// The message for `key` with `{name}` placeholders filled from `vars`.
@@ -86,6 +102,30 @@ mod tests {
     fn every_key_rust_uses_exists_in_english() {
         for key in RUST_KEYS {
             assert!(english().contains_key(*key), "en.json is missing {key}");
+        }
+    }
+
+    #[test]
+    fn every_key_rust_uses_is_translated_into_arabic() {
+        for key in RUST_KEYS {
+            assert!(arabic().contains_key(*key), "ar.json is missing {key}");
+        }
+    }
+
+    #[test]
+    fn the_tray_speaks_arabic() {
+        assert_eq!(text(Language::Ar, "tray.open"), "\u{200F}افتح Breathe");
+        assert_eq!(
+            text_with(Language::Ar, "tooltip.break", &[("time", "02:41")]),
+            "\u{200F}في استراحة، بقي 02:41 — Breathe"
+        );
+    }
+
+    #[test]
+    fn arabic_native_text_starts_right_to_left_and_english_is_untouched() {
+        for key in RUST_KEYS {
+            assert!(text(Language::Ar, key).starts_with(RLM), "{key}");
+            assert!(!text(Language::En, key).starts_with(RLM), "{key}");
         }
     }
 

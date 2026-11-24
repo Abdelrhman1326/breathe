@@ -139,8 +139,8 @@ export function Toggle({ checked, onChange, label, disabled }: ToggleProps) {
         className={cn(
           "absolute top-1/2 block h-[19px] w-[19px] -translate-y-1/2 rounded-full shadow-sm transition-all",
           checked
-            ? "left-[23px] bg-accent-fg"
-            : "left-[3px] bg-line-strong",
+            ? "start-[23px] bg-accent-fg"
+            : "start-[3px] bg-line-strong",
         )}
       />
     </button>
@@ -176,7 +176,7 @@ export function SelectField({
   return (
     <div className={cn("relative", className)}>
       {leadingIcon === "clock" ? (
-        <ClockIcon className="pointer-events-none absolute left-3.5 top-1/2 h-[17px] w-[17px] -translate-y-1/2 text-muted" />
+        <ClockIcon className="pointer-events-none absolute start-3.5 top-1/2 h-[17px] w-[17px] -translate-y-1/2 text-muted" />
       ) : null}
       <select
         aria-label={label}
@@ -188,8 +188,8 @@ export function SelectField({
           "h-11 w-full cursor-pointer appearance-none rounded-[14px] border border-line",
           "bg-surface text-[13.5px] font-medium text-fg transition-colors",
           "hover:bg-surface-hover",
-          leadingIcon === "clock" ? "pl-10" : "pl-3.5",
-          "pr-9",
+          leadingIcon === "clock" ? "ps-10" : "ps-3.5",
+          "pe-9",
         )}
       >
         {options.map((option) => (
@@ -198,7 +198,7 @@ export function SelectField({
           </option>
         ))}
       </select>
-      <ChevronDownIcon className="pointer-events-none absolute right-3.5 top-1/2 h-[17px] w-[17px] -translate-y-1/2 text-muted" />
+      <ChevronDownIcon className="pointer-events-none absolute end-3.5 top-1/2 h-[17px] w-[17px] -translate-y-1/2 text-muted" />
     </div>
   );
 }

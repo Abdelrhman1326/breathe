@@ -100,7 +100,7 @@ export function SettingsWindow({ controller }: SettingsWindowProps) {
                 aria-current={isActive ? "page" : undefined}
                 onClick={() => setActive(id)}
                 className={cn(
-                  "flex items-center gap-3 rounded-xl px-3 py-2.5 text-left text-[13.5px] transition-colors",
+                  "flex items-center gap-3 rounded-xl px-3 py-2.5 text-start text-[13.5px] transition-colors",
                   isActive
                     ? "bg-accent-soft font-medium text-accent-soft-fg"
                     : "text-muted hover:bg-surface-hover hover:text-fg",

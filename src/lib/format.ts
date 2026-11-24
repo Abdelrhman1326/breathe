@@ -18,7 +18,7 @@ export function formatClockTime(
   t: Translator = ENGLISH,
 ): string | null {
   if (epochMs === null || !Number.isFinite(epochMs)) return null;
-  return new Intl.DateTimeFormat(t.language, {
+  return new Intl.DateTimeFormat(t.locale, {
     hour: "numeric",
     minute: "2-digit",
   }).format(new Date(epochMs));

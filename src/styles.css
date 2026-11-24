@@ -57,9 +57,44 @@
   --shadow: 0 0 0;
 }
 
+/* Noto Sans Arabic (SIL OFL 1.1), bundled so Arabic renders the same on
+   Linux, Windows and macOS. woff2 only: every Breathe webview supports it. */
+@font-face {
+  font-family: "Breathe Arabic";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../node_modules/@fontsource/noto-sans-arabic/files/noto-sans-arabic-arabic-400-normal.woff2")
+    format("woff2");
+  unicode-range: U+0600-06FF, U+0750-077F, U+0870-08FF, U+FB50-FDFF, U+FE70-FEFF, U+200C-200F, U+2E41, U+25CC;
+}
+
+@font-face {
+  font-family: "Breathe Arabic";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("../node_modules/@fontsource/noto-sans-arabic/files/noto-sans-arabic-arabic-500-normal.woff2")
+    format("woff2");
+  unicode-range: U+0600-06FF, U+0750-077F, U+0870-08FF, U+FB50-FDFF, U+FE70-FEFF, U+200C-200F, U+2E41, U+25CC;
+}
+
+@font-face {
+  font-family: "Breathe Arabic";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("../node_modules/@fontsource/noto-sans-arabic/files/noto-sans-arabic-arabic-600-normal.woff2")
+    format("woff2");
+  unicode-range: U+0600-06FF, U+0750-077F, U+0870-08FF, U+FB50-FDFF, U+FE70-FEFF, U+200C-200F, U+2E41, U+25CC;
+}
+
 @theme inline {
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Cantarell", "Inter",
-    "Noto Sans", "Segoe UI", sans-serif;
+  /* "Breathe Arabic" covers only the Arabic blocks (see @font-face below), so
+     Latin text keeps the system font and Arabic gets one consistent face on
+     every platform instead of whatever fallback the OS picks. */
+  --font-sans: "Breathe Arabic", ui-sans-serif, system-ui, -apple-system,
+    "Cantarell", "Inter", "Noto Sans", "Segoe UI", sans-serif;
 
   --color-app: var(--app-bg);
   --color-app-elevated: var(--app-bg-elevated);
@@ -87,6 +122,11 @@
   body,
   #root {
     height: 100%;
+  }
+
+  /* Arabic script needs a little more vertical room than Latin. */
+  html[lang="ar"] body {
+    line-height: 1.6;
   }
 
   html {

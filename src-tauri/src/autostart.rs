@@ -43,16 +43,7 @@ const WINDOWS_ENTRY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run
 
 /// Desktop environments that run `~/.config/autostart` themselves.
 const SELF_MANAGING_DESKTOPS: [&str; 11] = [
-    "gnome",
-    "kde",
-    "plasma",
-    "xfce",
-    "cinnamon",
-    "mate",
-    "lxde",
-    "lxqt",
-    "unity",
-    "budgie",
+    "gnome", "kde", "plasma", "xfce", "cinnamon", "mate", "lxde", "lxqt", "unity", "budgie",
     "pantheon",
 ];
 
@@ -142,9 +133,7 @@ fn windows_notes(enabled: bool) -> Vec<String> {
     }
 
     vec![
-        format!(
-            "Breathe is registered under {WINDOWS_ENTRY} and starts hidden in the background."
-        ),
+        format!("Breathe is registered under {WINDOWS_ENTRY} and starts hidden in the background."),
         "The entry belongs to the current user and does not require administrator rights."
             .to_string(),
     ]
@@ -174,10 +163,7 @@ pub fn session_reads_startup_entry() -> bool {
 
 /// Pure decision logic, so it can be tested without touching the environment.
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-fn reads_startup_entry_for(
-    desktop: &str,
-    systemd_target_active: impl FnOnce() -> bool,
-) -> bool {
+fn reads_startup_entry_for(desktop: &str, systemd_target_active: impl FnOnce() -> bool) -> bool {
     let desktop = desktop.to_lowercase();
 
     if desktop.is_empty() {

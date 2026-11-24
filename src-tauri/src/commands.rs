@@ -5,9 +5,7 @@
 //! file grants the webview nothing beyond the default core surface and window
 //! dragging, so this list *is* the security boundary.
 
-use tauri::{
-    AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
-};
+use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
 use crate::model::{
     AppInfo, AutostartStatus, NotificationStatus, ReminderKind, ScheduleState, Settings,
@@ -54,14 +52,9 @@ pub fn get_app_info(app: AppHandle) -> AppInfo {
             .clone()
             .unwrap_or_else(|| "Breathe".to_string()),
         version: app.package_info().version.to_string(),
-        description: config
-            .bundle
-            .short_description
-            .clone()
-            .unwrap_or_else(|| {
-                "A calm, minimal desktop companion that reminds you to take short breaks."
-                    .to_string()
-            }),
+        description: config.bundle.short_description.clone().unwrap_or_else(|| {
+            "A calm, minimal desktop companion that reminds you to take short breaks.".to_string()
+        }),
         tauri_version: tauri::VERSION.to_string(),
         platform: platform_label(),
     }
@@ -279,34 +272,28 @@ pub fn open_settings_window(app: &AppHandle) -> Result<(), String> {
 
     let preference = app.state::<AppState>().current_settings().theme;
 
-    let window = WebviewWindowBuilder::new(
-        app,
-        SETTINGS_WINDOW,
-        WebviewUrl::App("index.html".into()),
-    )
-    .title("Breathe Settings")
-    // Fixed size: the dialog has one layout, and pinning min == max is what
-    // makes tiling compositors (niri) float it instead of stretching it into a
-    // column. The window is created hidden and shown below, because a size
-    // requested while the surface is already mapped is not honoured.
-    .inner_size(SETTINGS_WIDTH, SETTINGS_HEIGHT)
-    .min_inner_size(SETTINGS_WIDTH, SETTINGS_HEIGHT)
-    .max_inner_size(SETTINGS_WIDTH, SETTINGS_HEIGHT)
-    .resizable(false)
-    .maximizable(false)
-    .decorations(false)
-    .visible(false)
-    .background_color(theme::initial_background(preference))
-    .build()
-    .map_err(|error| format!("could not create the settings window: {error}"))?;
+    let window =
+        WebviewWindowBuilder::new(app, SETTINGS_WINDOW, WebviewUrl::App("index.html".into()))
+            .title("Breathe Settings")
+            // Fixed size: the dialog has one layout, and pinning min == max is what
+            // makes tiling compositors (niri) float it instead of stretching it into a
+            // column. The window is created hidden and shown below, because a size
+            // requested while the surface is already mapped is not honoured.
+            .inner_size(SETTINGS_WIDTH, SETTINGS_HEIGHT)
+            .min_inner_size(SETTINGS_WIDTH, SETTINGS_HEIGHT)
+            .max_inner_size(SETTINGS_WIDTH, SETTINGS_HEIGHT)
+            .resizable(false)
+            .maximizable(false)
+            .decorations(false)
+            .visible(false)
+            .background_color(theme::initial_background(preference))
+            .build()
+            .map_err(|error| format!("could not create the settings window: {error}"))?;
 
     let _ = window.set_theme(theme::tauri_theme(preference));
     attach_close_behaviour(&window);
 
-    let _ = window.set_size(tauri::LogicalSize::new(
-        SETTINGS_WIDTH,
-        SETTINGS_HEIGHT,
-    ));
+    let _ = window.set_size(tauri::LogicalSize::new(SETTINGS_WIDTH, SETTINGS_HEIGHT));
     let _ = window.center();
     let _ = window.show();
     let _ = window.set_focus();

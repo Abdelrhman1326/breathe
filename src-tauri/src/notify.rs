@@ -41,7 +41,9 @@ pub fn status() -> NotificationStatus {
     platform::status()
 }
 
-/// True when a notification service is reachable right now.
+/// True when a notification service is reachable right now. Only the Linux
+/// delivery path needs to ask.
+#[cfg_attr(target_os = "windows", allow(dead_code))]
 pub fn is_available() -> bool {
     status().available
 }

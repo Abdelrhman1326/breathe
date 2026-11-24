@@ -19,9 +19,7 @@
 use std::time::{Duration, SystemTime};
 
 use crate::clock::{add, to_epoch_ms, Clock};
-use crate::model::{
-    ReminderKind, ScheduleState, Settings, Snapshot, DEFAULT_SNOOZE_MINUTES,
-};
+use crate::model::{ReminderKind, ScheduleState, Settings, Snapshot, DEFAULT_SNOOZE_MINUTES};
 
 /// How often the background worker calls [`Scheduler::tick`].
 pub const TICK_INTERVAL_MS: u64 = 500;
@@ -299,7 +297,7 @@ impl<C: Clock> Scheduler<C> {
             next_kind: self.next_kind(),
             next_at_ms: next_at.map(to_epoch_ms),
             snooze_remaining_ms: (self.state == ScheduleState::Snoozed)
-                .then(|| remaining.as_millis() as i64),
+                .then_some(remaining.as_millis() as i64),
         }
     }
 
@@ -434,7 +432,10 @@ mod tests {
             let due = scheduler.tick().expect("a reminder is due");
             assert_eq!(due.kind, ReminderKind::Movement);
         }
-        assert_eq!(scheduler.snapshot(false).next_kind, Some(ReminderKind::Movement));
+        assert_eq!(
+            scheduler.snapshot(false).next_kind,
+            Some(ReminderKind::Movement)
+        );
     }
 
     #[test]

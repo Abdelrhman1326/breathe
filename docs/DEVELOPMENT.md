@@ -109,17 +109,51 @@ or D-Bus access (see `src-tauri/capabilities/default.json` — only
 
 `get_settings`, `get_snapshot`, `get_notification_status`, `get_autostart_status`,
 `get_app_info`, `save_settings`, `pause_reminders`, `resume_reminders`,
-`snooze_reminders`, `send_test_notification`, `set_autostart`, `hide_window`,
-`minimize_window`, `open_settings`, `quit_app`.
+`snooze_reminders` (optional `reminderId`), `take_break` (`reminderId`),
+`get_popup`, `dismiss_popup` (`seq`), `send_test_notification`,
+`set_autostart`, `hide_window`, `minimize_window`, `open_settings`, `quit_app`.
 
 `save_settings` validates every field (`SettingsPatch::apply`): the interval is
 clamped to 20–60 minutes, unknown themes are rejected, and the tray/theme/window
 side effects happen only after the store write succeeds.
 
-Rust pushes `breathe://snapshot` and `breathe://settings`; both windows listen,
-so they stay in sync without polling.
+Rust pushes `breathe://snapshot` and `breathe://settings`; every window
+listens, so they stay in sync without polling. `breathe://popup` goes to the
+popup window only.
 
-## Notifications
+## Reminder popup
+
+Reminders are shown in Breathe's own popup, not an OS notification card.
+
+- **Lifecycle (`popup.rs`)** is pure and unit-tested: at most one popup; the
+  same reminder is never shown twice; a reminder popup has no timer and hides
+  as soon as the reminder stops waiting (break, snooze, pause); the "break's
+  over" popup and the Settings preview hide after 8 s; dismissing (×) only
+  hides the popup and never answers the reminder; a stale `seq` is ignored.
+- **Window (`popup_window.rs`)**: one hidden, non-focusable, always-on-top,
+  transparent window (label `popup`) is created at startup and reused. If it
+  cannot be created, reminders fall back to native notifications (below).
+- **Placement** is per platform:
+  - Wayland: `libgtk-layer-shell.so.0` is loaded at runtime (≥ 0.7, not a
+    package dependency) and the window becomes an *overlay* layer surface
+    anchored top-right with no keyboard interactivity. Layer surfaces ignore
+    GTK geometry hints, so the size is set with `set_size_request`. Without the
+    library or the protocol (GNOME/Mutter) it stays an ordinary window that the
+    compositor places.
+  - X11: top-right of the work area of the monitor under the cursor.
+  - Windows: bottom-right of the work area (above the taskbar) of the monitor
+    under the cursor.
+- **Frontend (`PopupWindow.tsx`)** renders the current view, pulls it with
+  `get_popup` on load (so an event sent before the webview listened is not
+  lost) and plays the chime once per new `seq`.
+- **Sound (`src/lib/chime.ts`)**: a short chime synthesised with Web Audio, no
+  file and no native audio dependency. wry enables autoplay on all three
+  webviews, so the hidden popup can play it. `soundEnabled` turns it off.
+
+Preview the popup in a plain browser with
+`http://localhost:1420/?window=popup&popup=reminder` (or `breakOver`, `test`).
+
+## Native notifications (fallback)
 
 `notify.rs` is split by target platform. Both paths use
 `tauri-plugin-notification` for delivery.

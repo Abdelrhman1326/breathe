@@ -1,7 +1,8 @@
 # Breathe
 
 A calm desktop app that reminds you to rest your eyes and move. Reminders arrive
-as notifications; Breathe never locks your screen or interrupts your work.
+in a small Breathe popup with a soft chime; Breathe never locks your screen or
+takes focus from your work.
 
 ![Breathe main window](docs/images/main-light.png)
 
@@ -69,8 +70,11 @@ reputation.
 ## What Breathe does
 
 - Alternates between eye-rest and movement reminders when both are enabled.
-- Supports 20, 30, 45, or 60 minute intervals, pause/resume from the saved
-  remaining time, and five-minute snooze.
+- Supports 20, 30, 45, or 60 minute intervals and pause/resume from the saved
+  remaining time.
+- When a reminder is due, Breathe waits for you: take a 3-minute break (the
+  next countdown starts when it ends) or snooze for 10 minutes. It never
+  restarts the countdown on its own.
 - Includes light, dark, and system themes.
 - Can start with your user session and keeps running when its window is closed.
 

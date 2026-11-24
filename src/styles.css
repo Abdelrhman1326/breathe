@@ -227,6 +227,18 @@ html[data-window="popup"] body {
   }
 }
 
+/* macOS: the NSWindow provides the rounded corners and the shadow
+   (popup_window.rs), so the card fills the window edge to edge. */
+html[data-platform="mac"] .popup-frame {
+  padding: 0;
+}
+
+html[data-platform="mac"] .popup-card {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
 .popup-enter {
   animation: popup-enter 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }

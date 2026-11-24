@@ -524,6 +524,18 @@ jobs:
 
           Calm movement and eye-rest reminders for Linux and Windows.
 
+          ### What's new
+
+          - Reminders appear in Breathe's own popup, with a soft chime. It
+            never takes focus from what you are typing and never opens the
+            main window.
+          - When a reminder is due, Breathe waits for you: take a three-minute
+            break (the next countdown starts on its own when it ends) or
+            snooze for ten minutes. It never restarts the countdown silently.
+          - English and Arabic, chosen in Settings, with a full right-to-left
+            layout.
+          - "Play a sound" setting, and a tray item for the break.
+
           ### Downloads
 
           | Platform | File |
@@ -580,22 +592,20 @@ jobs:
 
           ### Notes
 
-          - Linux notifications need a working notification daemon and tray
-            support needs a StatusNotifier host. niri with a suitable tray host
-            is the tested environment; GNOME and KDE use the same XDG and
-            freedesktop services but were not individually re-verified for this
-            release.
-          - Windows notifications use the native toast API. Focus Assist and
-            notification settings can suppress them.
-          - No package was installed on physical Windows hardware as part of
-            this release; the NSIS installer is smoke-tested on a Windows CI
-            runner. Notifications, tray interaction, and startup behavior still
-            need manual verification on Windows 10/11.
+          - On Wayland compositors with layer-shell (niri, Sway, Hyprland, KDE)
+            the popup sits in the top-right corner; on GNOME the compositor
+            places it. If the popup cannot be created, reminders fall back to
+            native notifications. Tray support needs a StatusNotifier host;
+            niri is the tested environment.
+          - On Windows the popup sits bottom-right and was checked on a Windows
+            10 VM (no focus stealing, automatic restart after a break). The
+            installer is smoke-tested on a Windows CI runner; startup after a
+            reboot and Windows 11 still need manual verification.
+          - macOS is not part of this release; a preview build is checked in CI.
           - The Arch package metadata is validated in CI, but a full
             `makepkg -si` build should be checked before submitting to the AUR.
           - Linux packages are not signed with a repository key.
-          - Breathe never blocks the screen. Reminders are ordinary
-            notifications.
+          - Breathe never blocks the screen or takes focus.
           EOF
           sed -i "s/__VERSION__/${version}/g" release-notes.md
           sed -i "s/__SIGNATURE_STATUS__/${signature_status}/" release-notes.md

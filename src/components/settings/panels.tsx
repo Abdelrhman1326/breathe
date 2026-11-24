@@ -1,6 +1,7 @@
 import { cn } from "@/lib/cn";
 import { formatMinutes, reminderLabel } from "@/lib/format";
 import { Rich, useT } from "@/i18n/I18nProvider";
+import { LANGUAGES } from "@/lib/i18n";
 import { snoozeActionLabel } from "@/lib/presentation";
 import {
   INTERVAL_OPTIONS,
@@ -20,6 +21,7 @@ import {
   ClockIcon,
   EyeIcon,
   InfoIcon,
+  LanguagesIcon,
   LeafMark,
   MovementIcon,
   PauseIcon,
@@ -113,6 +115,26 @@ export function GeneralPanel({ settings, snapshot, update }: PanelProps) {
             >
               {running ? t("action.pause") : t("action.start")}
             </SecondaryButton>
+          }
+        />
+        <SettingRow
+          icon={<LanguagesIcon className="h-[18px] w-[18px]" />}
+          title={t("settings.general.language.title")}
+          description={t("settings.general.language.description")}
+          control={
+            <SelectField
+              className="w-[150px]"
+              label={t("settings.general.language.title")}
+              leadingIcon="none"
+              value={settings.language}
+              options={LANGUAGES.map((language) => ({
+                value: language,
+                label: t(`language.${language}`),
+              }))}
+              onChange={(value) => {
+                if (value === "en" || value === "ar") void update({ language: value });
+              }}
+            />
           }
         />
       </Rows>
@@ -300,7 +322,7 @@ function ThemePreviewHalf({ palette }: { palette: Palette }) {
       style={{ backgroundColor: palette.bg }}
     >
       <div
-        className="absolute left-3 top-1/2 h-[26px] w-[26px] -translate-y-1/2 rounded-full"
+        className="absolute start-3 top-1/2 h-[26px] w-[26px] -translate-y-1/2 rounded-full"
         style={{
           border: `3px solid ${palette.arc}`,
           borderRightColor: palette.track,
@@ -308,15 +330,15 @@ function ThemePreviewHalf({ palette }: { palette: Palette }) {
         }}
       />
       <div
-        className="absolute right-3 top-[13px] h-[7px] w-[34px] rounded-full"
+        className="absolute end-3 top-[13px] h-[7px] w-[34px] rounded-full"
         style={{ backgroundColor: palette.line }}
       />
       <div
-        className="absolute right-3 top-[26px] h-[7px] w-[22px] rounded-full"
+        className="absolute end-3 top-[26px] h-[7px] w-[22px] rounded-full"
         style={{ backgroundColor: palette.line }}
       />
       <div
-        className="absolute bottom-[10px] right-3 h-[10px] w-[46px] rounded-full"
+        className="absolute bottom-[10px] end-3 h-[10px] w-[46px] rounded-full"
         style={{ backgroundColor: palette.accent }}
       />
     </div>
@@ -343,7 +365,7 @@ function ThemeTile({
       aria-checked={active}
       onClick={onSelect}
       className={cn(
-        "group rounded-2xl border p-2.5 text-left transition-colors",
+        "group rounded-2xl border p-2.5 text-start transition-colors",
         active
           ? "border-accent bg-accent-soft"
           : "border-line hover:bg-surface-hover",
@@ -374,7 +396,7 @@ function ThemeTile({
           {label}
         </span>
         {active ? (
-          <CheckIcon className="ml-auto h-[14px] w-[14px] text-accent" />
+          <CheckIcon className="ms-auto h-[14px] w-[14px] text-accent" />
         ) : null}
       </div>
       <div className="mt-0.5 text-[11.5px] leading-snug text-muted">
@@ -413,7 +435,7 @@ export function AppearancePanel({ settings, update }: PanelProps) {
         ))}
       </div>
       <p className="mt-5 text-[12.5px] leading-relaxed text-muted">
-        <PaletteIcon className="mr-1.5 -mt-0.5 inline h-[14px] w-[14px]" />
+        <PaletteIcon className="me-1.5 -mt-0.5 inline h-[14px] w-[14px]" />
         {t("settings.appearance.note")}
       </p>
     </>

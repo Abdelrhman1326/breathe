@@ -6,6 +6,7 @@ import {
   Clock,
   Eye,
   Info,
+  Languages,
   Minus,
   Palette,
   Pause,
@@ -59,6 +60,7 @@ export const BellIcon = icon(Bell);
 export const PaletteIcon = icon(Palette);
 export const PowerIcon = icon(Power);
 export const InfoIcon = icon(Info);
+export const LanguagesIcon = icon(Languages);
 export const ChevronDownIcon = icon(ChevronDown);
 export const CheckIcon = icon(Check);
 export const AlertIcon = icon(CircleAlert);

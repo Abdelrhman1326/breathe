@@ -32,7 +32,7 @@ interface PopupCardProps {
  */
 export function PopupCard({ view, snoozeEnabled, actions }: PopupCardProps) {
   const t = useT();
-  const copy = describePopup(view.content, t);
+  const copy = describePopup(view.content, t, view.seq);
   const reminder = view.content.type === "reminder" ? view.content.reminder : null;
   const KindIcon = copy.kind === "movement" ? MovementIcon : EyeIcon;
 
@@ -59,7 +59,15 @@ export function PopupCard({ view, snoozeEnabled, actions }: PopupCardProps) {
             <h2 className="mt-0.5 text-[15px] font-semibold leading-snug text-fg">
               {copy.title}
             </h2>
-            <p className="mt-1 text-[12.5px] leading-[1.5] text-muted">{copy.body}</p>
+            <p
+              className={
+                copy.bodyIsPhrase
+                  ? "phrase mt-1 text-[14px] text-fg/80"
+                  : "mt-1 text-[12.5px] leading-[1.5] text-muted"
+              }
+            >
+              {copy.body}
+            </p>
           </div>
         </div>
 

@@ -14,6 +14,7 @@
  * - A key missing from a catalog falls back to English, so an incomplete
  *   translation degrades instead of showing a raw key.
  */
+import ar from "@/locales/ar.json";
 import en from "@/locales/en.json";
 
 export type Language = "en" | "ar";
@@ -31,20 +32,31 @@ export type Vars = Record<string, string | number>;
 
 type Catalog = Partial<Record<MessageKey, string>> & Record<string, string | undefined>;
 
-const catalogs: Record<Language, Catalog> = {
-  en,
-  // The Arabic catalog arrives with the Arabic translation; until then every
-  // lookup falls back to English.
-  ar: {},
-};
+const catalogs: Record<Language, Catalog> = { en, ar };
+
+/** Languages offered in Settings, each named in its own language. */
+export const LANGUAGES: readonly Language[] = ["en", "ar"];
 
 export interface Translator {
   (key: MessageKey, vars?: Vars): string;
   plural: (base: PluralBase, count: number, vars?: Vars) => string;
   number: (value: number) => string;
   language: Language;
+  /** BCP 47 tag for Intl formatting, with the numbering system pinned. */
+  locale: string;
   dir: Direction;
 }
+
+/**
+ * Arabic prose uses Arabic-Indic digits (٤٥). The numbering system is pinned
+ * because engines disagree on the default for plain `ar` (Node/ICU picks
+ * Latin digits, some webviews Arabic-Indic), and the countdown itself stays
+ * in Western digits for legibility.
+ */
+const FORMAT_LOCALE: Record<Language, string> = {
+  en: "en",
+  ar: "ar-u-nu-arab",
+};
 
 export function direction(language: Language): Direction {
   return language === "ar" ? "rtl" : "ltr";
@@ -52,7 +64,7 @@ export function direction(language: Language): Direction {
 
 export function createTranslator(language: Language): Translator {
   const catalog = catalogs[language];
-  const numbers = new Intl.NumberFormat(language);
+  const numbers = new Intl.NumberFormat(FORMAT_LOCALE[language]);
   const rules = new Intl.PluralRules(language);
 
   const format = (template: string, vars?: Vars): string =>
@@ -78,6 +90,7 @@ export function createTranslator(language: Language): Translator {
   };
   t.number = (value) => numbers.format(value);
   t.language = language;
+  t.locale = FORMAT_LOCALE[language];
   t.dir = direction(language);
   return t;
 }

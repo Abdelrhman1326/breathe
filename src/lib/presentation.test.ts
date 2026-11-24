@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { createTranslator } from "./i18n";
 import {
+  contextualMessage,
   describePopup,
   describeMainWindow,
   effectiveIntervalMinutes,
@@ -175,7 +177,9 @@ describe("describePopup", () => {
     const preview = describePopup({ type: "test", kind: "eyes" });
     const real = describePopup({ type: "reminder", reminder: { id: 1, kind: "eyes" } });
     expect(preview.title).toBe(real.title);
-    expect(preview.body).toBe(real.body);
+    expect(preview.body).toBe(
+      "Look away from the screen and let your eyes rest on something far away.",
+    );
     expect(preview.actionable).toBe(false);
     expect(preview.eyebrow).toBe("Preview");
   });
@@ -184,5 +188,35 @@ describe("describePopup", () => {
     const copy = describePopup({ type: "breakOver", kind: "eyes" });
     expect(copy.title).toBe("Break's over");
     expect(copy.actionable).toBe(false);
+  });
+});
+
+describe("contextual messages", () => {
+  it("walks through the pool so consecutive reminders differ", () => {
+    const first = describePopup({ type: "reminder", reminder: { id: 1, kind: "eyes" } });
+    const second = describePopup({ type: "reminder", reminder: { id: 2, kind: "eyes" } });
+    expect(first.body).not.toBe(second.body);
+  });
+
+  it("shows the approved phrase in Arabic as a plain message", () => {
+    const t = createTranslator("ar");
+    const bodies = [1, 2].map(
+      (id) => describePopup({ type: "reminder", reminder: { id, kind: "eyes" } }, t).body,
+    );
+    expect(bodies).toContain("إنَّ لِعَينِكَ عليكَ حقًّا.");
+  });
+
+  it("is stable for the same event", () => {
+    expect(contextualMessage("breakOver", 7)).toBe(contextualMessage("breakOver", 7));
+  });
+
+  it("varies the break support line by reminder", () => {
+    const lines = [0, 1, 2].map((id) =>
+      describeMainWindow(
+        settings,
+        snapshot({ state: "break", pending: { id, kind: "movement" } }),
+      ).support,
+    );
+    expect(new Set(lines).size).toBe(3);
   });
 });

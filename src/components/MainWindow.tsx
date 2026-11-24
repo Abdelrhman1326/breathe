@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { cn } from "@/lib/cn";
 import { intervalLabel } from "@/lib/format";
 import {
   breakActionLabel,
@@ -71,7 +72,10 @@ export function MainWindow({ settings, snapshot, actions }: MainWindowProps) {
         </div>
 
         <p
-          className="mx-auto mt-4 min-h-[40px] max-w-[292px] text-center text-[13px] leading-[1.55] text-muted"
+          className={cn(
+            "mx-auto mt-4 min-h-[40px] max-w-[292px] text-center text-muted",
+            copy.supportIsPhrase ? "phrase text-[15px]" : "text-[13px] leading-[1.55]",
+          )}
           aria-live="polite"
         >
           {copy.support}

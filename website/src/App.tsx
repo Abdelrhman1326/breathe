@@ -10,13 +10,13 @@ import {
   Download,
   Eye,
   HeartPulse,
+  Languages,
   Layers,
   Leaf,
   Menu,
   Monitor,
   Moon,
   Package,
-  Pause,
   Power,
   Settings,
   ShieldCheck,
@@ -59,23 +59,24 @@ const FEATURES: ReadonlyArray<Feature> = [
   {
     icon: Timer,
     title: "Breaks on your rhythm",
-    body: "Choose a 20, 30, 45, or 60 minute interval. The circular countdown stays visible but never takes over your work.",
+    body: "Choose a 20, 30, 45, or 60 minute interval, with movement reminders, eye-rest reminders, or both in turn.",
   },
   {
-    icon: HeartPulse,
-    title: "Move and rest your eyes",
-    body: "Turn movement reminders and eye-rest reminders on independently. When both are enabled, Breathe alternates between them.",
-  },
-  {
-    icon: Pause,
-    title: "Pause without losing your place",
-    body: "Pause freezes the remaining time; resume continues from where you stopped. A five-minute snooze is available from the tray when you need it.",
+    icon: Coffee,
+    title: "A break when you choose",
+    body: "When a reminder is due, Breathe waits for you: take a three-minute break and the next countdown starts on its own, or snooze for ten minutes. Pause keeps your remaining time.",
   },
   {
     icon: Monitor,
-    title: "Native notifications",
-    body: "Reminders arrive through the desktop notification service on Linux and the native toast API on Windows. Settings reports whether the service is available.",
+    title: "A popup that never steals focus",
+    body: "Reminders appear in a small Breathe popup in the corner of your screen, with a soft chime. It never takes focus from what you are typing and never opens the main window.",
   },
+  {
+    icon: Languages,
+    title: "English and Arabic",
+    body: "Choose the language in Settings, independently of your system. Arabic uses a full right-to-left layout and carefully typeset text.",
+  },
+
   {
     icon: Power,
     title: "Quietly ready",
@@ -707,7 +708,7 @@ function App() {
             </div>
             <div className="hero-meta">
               <span><CheckCircle2 aria-hidden="true" /> Open source · MIT</span>
-              <span><CheckCircle2 aria-hidden="true" /> Linux & Windows</span>
+              <span><CheckCircle2 aria-hidden="true" /> Linux & Windows · macOS preview</span>
               <span><CheckCircle2 aria-hidden="true" /> Local settings</span>
             </div>
           </div>
@@ -746,6 +747,7 @@ function App() {
             <span><Timer aria-hidden="true" /> 20–60 minute intervals</span>
             <span><Eye aria-hidden="true" /> Eye-rest reminders</span>
             <span><HeartPulse aria-hidden="true" /> Movement reminders</span>
+            <span><Coffee aria-hidden="true" /> Three-minute breaks</span>
             <span><Leaf aria-hidden="true" /> Hides instead of quitting</span>
           </div>
         </section>
@@ -776,14 +778,14 @@ function App() {
               <h2>Leave it running. That is the point.</h2>
               <p>
                 Breathe keeps the countdown in a small window, hides when you close
-                it, and stays available from the tray. You can pause for a meeting,
-                resume with the time you had left, snooze for five minutes, or let
-                the rhythm continue.
+                it, and keeps working in the background. When a reminder is due,
+                take a three-minute break or snooze for ten minutes; pause for a
+                meeting and resume with the time you had left.
               </p>
               <ul className="check-list">
                 <li><Check aria-hidden="true" /> Choose 20, 30, 45, or 60 minutes</li>
                 <li><Check aria-hidden="true" /> Use movement, eye rest, or both</li>
-                <li><Check aria-hidden="true" /> See notification availability in Settings</li>
+                <li><Check aria-hidden="true" /> Read it in English or Arabic</li>
                 <li><Check aria-hidden="true" /> Start with your session, only if you want to</li>
               </ul>
               <a className="text-link" href={GITHUB_REPO_URL} target="_blank" rel="noreferrer">
